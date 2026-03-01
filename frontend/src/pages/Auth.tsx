@@ -143,7 +143,7 @@ const Auth = () => {
         const result = await withTimeout(signIn(email, password), AUTH_REQUEST_TIMEOUT_MS);
 
         if (result.error) {
-          if (result.error.includes("Email not verified")) {
+          if (result.error.includes("Email not verified") || result.error.includes("Email verification required")) {
             toast({
               title: "Email not verified",
               description: "Please verify your email address first. Check your inbox for a verification link.",

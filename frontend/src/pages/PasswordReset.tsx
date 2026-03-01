@@ -3,8 +3,8 @@
  * - ResetRequest: Email form to request password reset
  * - ResetConfirm: New password form with token validation
  */
-import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -136,6 +136,20 @@ export const ResetRequest = () => {
 };
 
 // ============================================
+// PASSWORD RESET ROUTER PAGE
+// ============================================
+export const ResetPasswordPage = () => {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get('token');
+
+  if (token) {
+    return <Navigate to={`/reset?token=${encodeURIComponent(token)}`} replace />;
+  }
+
+  return <ResetRequest />;
+};
+
+// ============================================
 // PASSWORD RESET CONFIRM PAGE
 // ============================================
 export const ResetConfirm = () => {
@@ -148,9 +162,53 @@ export const ResetConfirm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isValidatingToken, setIsValidatingToken] = useState(true);
+  const [tokenValid, setTokenValid] = useState(false);
 
-  // Redirect if no token
-  if (!token) {
+  useEffect(() => {
+    let mounted = true;
+
+    const validateToken = async () => {
+      if (!token) {
+        if (!mounted) return;
+        setTokenValid(false);
+        setIsValidatingToken(false);
+        return;
+      }
+
+      try {
+        const validation = await api.auth.validateResetToken(token);
+        if (!mounted) return;
+        setTokenValid(Boolean(validation?.valid));
+      } catch {
+        if (!mounted) return;
+        setTokenValid(false);
+      } finally {
+        if (mounted) {
+          setIsValidatingToken(false);
+        }
+      }
+    };
+
+    validateToken();
+
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  if (isValidatingToken) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <Loader2 className="h-8 w-8 mx-auto animate-spin text-gold-400 mb-4" />
+          <p className="text-muted-foreground">Validating reset link…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!token || !tokenValid) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md text-center">
@@ -174,6 +232,11 @@ export const ResetConfirm = () => {
 
     if (password.length < 8) {
       toast.error('Password must be at least 8 characters');
+      return;
+    }
+
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      toast.error('Password must include uppercase, lowercase, and a number');
       return;
     }
 
@@ -259,7 +322,7 @@ export const ResetConfirm = () => {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">Minimum 8 characters</p>
+              <p className="text-xs text-muted-foreground">Minimum 8 chars, with uppercase, lowercase, and a number</p>
             </div>
 
             <div className="space-y-2">
@@ -301,4 +364,4 @@ export const ResetConfirm = () => {
   );
 };
 
-export default { ResetRequest, ResetConfirm };
+export default { ResetRequest, ResetConfirm, ResetPasswordPage };

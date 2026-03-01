@@ -30,7 +30,7 @@ const API_WARMUP_TIMEOUT_MS = 5000;
 import Index from "@/pages/Index";
 import Auth from "@/pages/Auth";
 import NotFound from "@/pages/NotFound";
-import { ResetRequest, ResetConfirm } from "@/pages/PasswordReset";
+import { ResetPasswordPage, ResetConfirm } from "@/pages/PasswordReset";
 
 // Lazy loaded pages for performance
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
@@ -229,7 +229,7 @@ const AppContent = () => {
           <Route path="/contact" element={<Contact />} />
 
           {/* Password Reset */}
-          <Route path="/reset-password" element={<ResetRequest />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/reset" element={<ResetConfirm />} />
 
           {/* Company Pages */}

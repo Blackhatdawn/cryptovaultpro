@@ -9,6 +9,7 @@ import bcrypt
 from typing import Optional
 import logging
 import asyncio
+import re
 
 from models import (
     User, UserCreate, UserLogin, UserResponse,
@@ -33,9 +34,24 @@ from auth import (
 from referral_service import ReferralService
 from dependencies import get_current_user_id, get_db
 from blacklist import blacklist_token
+from redis_cache import redis_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+PASSWORD_POLICY_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$")
+
+
+def validate_password_policy(password: str) -> None:
+    """Server-side password policy enforcement to match signup/reset flows."""
+    if not PASSWORD_POLICY_REGEX.match(password or ""):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Password must be 8-128 characters and include at least "
+                "one uppercase letter, one lowercase letter, and one number."
+            ),
+        )
 
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
@@ -129,6 +145,8 @@ async def signup(
             status_code=400,
             detail="Email already registered"
         )
+
+    validate_password_policy(user_data.password)
 
     verification_code = generate_verification_code()
     verification_token = generate_verification_token()
@@ -538,8 +556,7 @@ async def change_password(
     new_password = body.get("new_password")
     if not current_password or not new_password:
         raise HTTPException(status_code=400, detail="Current and new password are required")
-    if len(new_password) < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    validate_password_policy(new_password)
     user_doc = await users_collection.find_one({"id": user_id})
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
@@ -715,9 +732,27 @@ async def forgot_password(
     db = Depends(get_db)
 ):
     """Request password reset email."""
-    # Temporarily disable rate limiting to fix the issue
-    # 
     users_collection = db.get_collection("users")
+
+    client_ip = (request.client.host if request.client else "unknown").lower()
+    email_key = data.email.strip().lower()
+
+    # Layered throttling (IP + email) to reduce abuse and email flooding.
+    ip_allowed = await redis_cache.rate_limit_check(
+        f"auth:forgot-password:ip:{client_ip}",
+        limit=20,
+        window=60,
+    )
+    email_allowed = await redis_cache.rate_limit_check(
+        f"auth:forgot-password:email:{email_key}",
+        limit=5,
+        window=3600,
+    )
+    if not ip_allowed or not email_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many password reset requests. Please try again later.",
+        )
 
     user_doc = await users_collection.find_one({"email": data.email})
 
@@ -736,8 +771,6 @@ async def forgot_password(
             "password_reset_expires": reset_expires
         }}
     )
-
-    reset_link = f"{settings.app_url}/reset-password?token={reset_token}"
 
     subject, html_content, text_content = email_service.get_password_reset_email(
         name=user.name,
@@ -794,8 +827,7 @@ async def reset_password(
     if user.password_reset_expires < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Reset token expired. Please request a new one.")
 
-    if len(data.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    validate_password_policy(data.new_password)
 
     new_password_hash = get_password_hash(data.new_password)
 

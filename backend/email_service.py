@@ -325,7 +325,7 @@ CryptoVault Financial, Inc.
         """Generate password reset email."""
         subject = "🔑 CryptoVault - Reset Your Password"
         
-        reset_link = f"{app_url}/reset-password?token={token}"
+        reset_link = f"{app_url}/reset?token={token}"
         
         html_content = f"""
 <!DOCTYPE html>
