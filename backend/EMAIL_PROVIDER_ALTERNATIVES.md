@@ -4,8 +4,19 @@ If you are having issues with `SENDGRID_API_KEY`, you can switch the backend to 
 
 ## Current backend support
 - `EMAIL_SERVICE=sendgrid` (API)
+- `EMAIL_SERVICE=resend` (API)
 - `EMAIL_SERVICE=smtp` (SMTP relay)
 - `EMAIL_SERVICE=mock` (dev/testing only)
+
+## Direct Resend API mode
+If you have a Resend API key (starts with `re_...`), you can use direct API mode:
+
+```env
+EMAIL_SERVICE=resend
+RESEND_API_KEY=<your_resend_api_key>
+EMAIL_FROM=no-reply@yourdomain.com
+EMAIL_FROM_NAME=CryptoVault
+```
 
 ## Recommended replacements
 
