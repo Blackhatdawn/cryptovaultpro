@@ -43,7 +43,7 @@ try:
     SENDGRID_AVAILABLE = True
 except ImportError:
     SENDGRID_AVAILABLE = False
-    logger.warning("SendGrid not installed. Using mock email service.")
+    logger.warning("SendGrid SDK not installed; SendGrid mode unavailable.")
 
 
 def generate_verification_code(length: int = 6) -> str:
