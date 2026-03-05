@@ -22,7 +22,7 @@ from typing import Optional, List
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, validator, SecretStr
+from pydantic import Field, validator, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -206,10 +206,14 @@ class Settings(BaseSettings):
     # ============================================
     # EMAIL CONFIGURATION
     # ============================================
-    email_service: str = Field(default="sendgrid", description="Email service provider (sendgrid, smtp, mock)")
+    email_service: str = Field(default="sendgrid", description="Email service provider (sendgrid, resend, smtp, mock)")
     sendgrid_api_key: Optional[SecretStr] = Field(
         default=None,
         description="SendGrid API key"
+    )
+    resend_api_key: Optional[SecretStr] = Field(
+        default=None,
+        description="Resend API key"
     )
     email_from: str = Field(
         default="team@cryptovault.financial",
@@ -405,7 +409,7 @@ class Settings(BaseSettings):
     def validate_email_service(cls, v):
         """Ensure email service provider is valid."""
         value = str(v).strip().lower()
-        valid_services = ["sendgrid", "smtp", "mock"]
+        valid_services = ["sendgrid", "resend", "smtp", "mock"]
         if value not in valid_services:
             raise ValueError(f"Email service must be one of {valid_services}, got {v}")
         return value
@@ -459,40 +463,38 @@ class Settings(BaseSettings):
             raise ValueError("smtp_use_tls and smtp_use_ssl cannot both be true")
         return v
 
-    @validator("sendgrid_api_key")
-    def validate_production_email_config(cls, v, values):
+    @model_validator(mode="after")
+    def validate_production_email_config(self):
         """
         FIX #3: Validate email configuration in production.
         Ensure production environments have properly configured email service.
         """
-        environment = values.get("environment", "development")
-        email_service = values.get("email_service", "mock")
-        
-        # Only enforce in production
-        if environment == "production":
-            if email_service == "sendgrid":
-                # SendGrid requires API key
-                if not v:
-                    raise ValueError(
-                        "CRITICAL: SENDGRID_API_KEY is required when EMAIL_SERVICE=sendgrid in production. "
-                        "Either set SENDGRID_API_KEY or change EMAIL_SERVICE to 'smtp'."
-                    )
-            elif email_service == "smtp":
-                # SMTP requires host (username/password validated separately)
-                smtp_host = values.get("smtp_host")
-                if not smtp_host:
-                    raise ValueError(
-                        "CRITICAL: SMTP_HOST is required when EMAIL_SERVICE=smtp in production. "
-                        "Either set SMTP_HOST or change EMAIL_SERVICE to 'sendgrid'."
-                    )
-            elif email_service == "mock":
-                # Mock email not allowed in production
+        if self.environment == "production":
+            if self.email_service == "sendgrid" and not self.sendgrid_api_key:
+                raise ValueError(
+                    "CRITICAL: SENDGRID_API_KEY is required when EMAIL_SERVICE=sendgrid in production. "
+                    "Either set SENDGRID_API_KEY or change EMAIL_SERVICE to 'smtp' or 'resend'."
+                )
+
+            if self.email_service == "resend" and not self.resend_api_key:
+                raise ValueError(
+                    "CRITICAL: RESEND_API_KEY is required when EMAIL_SERVICE=resend in production. "
+                    "Either set RESEND_API_KEY or change EMAIL_SERVICE to 'smtp' or 'sendgrid'."
+                )
+
+            if self.email_service == "smtp" and not self.smtp_host:
+                raise ValueError(
+                    "CRITICAL: SMTP_HOST is required when EMAIL_SERVICE=smtp in production. "
+                    "Either set SMTP_HOST or change EMAIL_SERVICE to 'sendgrid' or 'resend'."
+                )
+
+            if self.email_service == "mock":
                 raise ValueError(
                     "CRITICAL: Mock email service is not allowed in production. "
-                    "Set EMAIL_SERVICE to 'sendgrid' or 'smtp' and provide credentials."
+                    "Set EMAIL_SERVICE to 'sendgrid', 'resend', or 'smtp' and provide credentials."
                 )
-        
-        return v
+
+        return self
 
     @validator("app_url", "public_api_url", "public_ws_url", pre=True)
     def normalize_urls(cls, v):
@@ -606,6 +608,7 @@ class Settings(BaseSettings):
                 "jwt_secret",
                 "csrf_secret",
                 "sendgrid_api_key",
+                "resend_api_key",
                 "nowpayments_api_key",
                 "nowpayments_ipn_secret",
                 "upstash_redis_rest_token",
@@ -685,6 +688,8 @@ def validate_startup_environment() -> dict:
 
         if settings.email_service == "sendgrid":
             strict_required["sendgrid_api_key"] = settings.sendgrid_api_key
+        elif settings.email_service == "resend":
+            strict_required["resend_api_key"] = settings.resend_api_key
         elif settings.email_service == "smtp":
             strict_required["smtp_host"] = settings.smtp_host
             strict_required["smtp_port"] = settings.smtp_port
@@ -819,6 +824,8 @@ def test_configuration() -> None:
     print(f"  Verification URL: {settings.email_verification_url}")
     if settings.sendgrid_api_key:
         print(f"  SendGrid: ✓ Configured")
+    if settings.resend_api_key:
+        print(f"  Resend: ✓ Configured")
 
     print("\nExternal Services:")
     print(f"  CoinCap API: {'✓ Configured' if settings.coincap_api_key else '✗ Not configured'}")

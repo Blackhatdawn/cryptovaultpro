@@ -14,11 +14,12 @@ import secrets
 import string
 import asyncio
 from datetime import datetime, timedelta
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, Callable, Awaitable
 import logging
 from email.message import EmailMessage
 
 import aiosmtplib
+import httpx
 
 from config import settings
 
@@ -42,7 +43,7 @@ try:
     SENDGRID_AVAILABLE = True
 except ImportError:
     SENDGRID_AVAILABLE = False
-    logger.warning("SendGrid not installed. Using mock email service.")
+    logger.warning("SendGrid SDK not installed; SendGrid mode unavailable.")
 
 
 def generate_verification_code(length: int = 6) -> str:
@@ -76,6 +77,9 @@ class EmailService:
         # Extract secret value if it's a SecretStr
         api_key = settings.sendgrid_api_key
         self.sendgrid_api_key = api_key.get_secret_value() if api_key else None
+        resend_api_key = settings.resend_api_key
+        self.resend_api_key = resend_api_key.get_secret_value() if resend_api_key else None
+        self.resend_api_url = "https://api.resend.com/emails"
         self.from_email = settings.email_from
         self.from_name = settings.email_from_name
 
@@ -118,6 +122,24 @@ class EmailService:
                         logger.warning("⚠️ sendgrid package not installed - falling back to mock email mode")
                     logger.info("📧 Email service running in mock mode")
 
+        elif configured_service == 'resend':
+            if self.resend_api_key:
+                self.mode = 'resend'
+                logger.info("✅ Email service initialized with Resend")
+            else:
+                if is_production:
+                    error_msg = "❌ CRITICAL: Resend email service misconfigured in production - RESEND_API_KEY is missing"
+                    logger.error(error_msg)
+                    raise RuntimeError(
+                        f"{error_msg}. Production requires properly configured email service. "
+                        "Set RESEND_API_KEY or change EMAIL_SERVICE setting."
+                    )
+                self.mode = 'mock'
+                logger.warning(
+                    "⚠️ RESEND_API_KEY is missing - falling back to mock email mode"
+                )
+                logger.info("📧 Email service running in mock mode")
+
         elif configured_service == 'smtp':
             if self.smtp_host:
                 self.mode = 'smtp'
@@ -144,7 +166,7 @@ class EmailService:
                 error_msg = "❌ CRITICAL: Mock email service is not allowed in production"
                 logger.error(error_msg)
                 raise RuntimeError(
-                    f"{error_msg}. Set EMAIL_SERVICE to 'sendgrid' or 'smtp' and provide credentials."
+                    f"{error_msg}. Set EMAIL_SERVICE to 'sendgrid', 'resend', or 'smtp' and provide credentials."
                 )
             self.mode = 'mock'
             logger.info("📧 Email service running in mock mode")
@@ -411,8 +433,25 @@ CryptoVault Financial, Inc.
         """
         if self.mode == 'sendgrid' and self.client:
             if retry:
-                return await self._send_with_retry(to_email, subject, html_content, text_content)
+                return await self._send_with_retry(
+                    self._send_sendgrid,
+                    to_email,
+                    subject,
+                    html_content,
+                    text_content,
+                )
             return await self._send_sendgrid(to_email, subject, html_content, text_content)
+
+        if self.mode == 'resend':
+            if retry:
+                return await self._send_with_retry(
+                    self._send_resend,
+                    to_email,
+                    subject,
+                    html_content,
+                    text_content,
+                )
+            return await self._send_resend(to_email, subject, html_content, text_content)
 
         if self.mode == 'smtp':
             return await self._send_smtp(to_email, subject, html_content, text_content)
@@ -421,35 +460,35 @@ CryptoVault Financial, Inc.
     
     async def _send_with_retry(
         self,
+        send_func: Callable[[str, str, str, str], Awaitable[bool]],
         to_email: str,
         subject: str,
         html_content: str,
-        text_content: str
+        text_content: str,
     ) -> bool:
-        """Send email with exponential backoff retry logic."""
+        """Send email with exponential backoff retry logic for API providers."""
         last_error = None
-        
+
         for attempt in range(EMAIL_RETRY_CONFIG["max_retries"]):
             try:
-                success = await self._send_sendgrid(to_email, subject, html_content, text_content)
+                success = await send_func(to_email, subject, html_content, text_content)
                 if success:
                     if attempt > 0:
                         logger.info(f"✅ Email sent after {attempt + 1} attempts to {to_email}")
                     return True
-                    
             except Exception as e:
                 last_error = e
                 logger.warning(f"⚠️ Email attempt {attempt + 1} failed: {str(e)}")
-            
+
             # Calculate backoff delay
             if attempt < EMAIL_RETRY_CONFIG["max_retries"] - 1:
                 delay = min(
                     EMAIL_RETRY_CONFIG["base_delay"] * (EMAIL_RETRY_CONFIG["exponential_base"] ** attempt),
-                    EMAIL_RETRY_CONFIG["max_delay"]
+                    EMAIL_RETRY_CONFIG["max_delay"],
                 )
                 logger.info(f"⏳ Retrying email in {delay:.1f}s...")
                 await asyncio.sleep(delay)
-        
+
         logger.error(f"❌ Email failed after {EMAIL_RETRY_CONFIG['max_retries']} attempts to {to_email}")
         if last_error:
             logger.error(f"   Last error: {str(last_error)}")
@@ -526,6 +565,48 @@ CryptoVault Financial, Inc.
             return True
         except Exception as e:
             logger.error(f"❌ SMTP exception: {str(e)}")
+            return False
+
+    async def _send_resend(
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: str
+    ) -> bool:
+        """Send email via Resend API with timeout."""
+        try:
+            payload = {
+                "from": f"{self.from_name} <{self.from_email}>",
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content,
+                "text": text_content,
+            }
+            headers = {
+                "Authorization": f"Bearer {self.resend_api_key}",
+                "Content-Type": "application/json",
+            }
+
+            async with httpx.AsyncClient(timeout=EMAIL_RETRY_CONFIG["send_timeout"]) as client:
+                response = await client.post(
+                    self.resend_api_url,
+                    json=payload,
+                    headers=headers,
+                )
+
+            if response.status_code in [200, 201, 202]:
+                logger.info(f"✅ Resend email sent successfully to {to_email}")
+                return True
+
+            logger.error(
+                "❌ Resend error: %s - %s",
+                response.status_code,
+                response.text,
+            )
+            return False
+        except Exception as e:
+            logger.error(f"❌ Resend exception: {str(e)}")
             return False
 
     async def _send_mock(self, to_email: str, subject: str) -> bool:
