@@ -14,7 +14,7 @@ import secrets
 import string
 import asyncio
 from datetime import datetime, timedelta
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, Callable, Awaitable
 import logging
 from email.message import EmailMessage
 
@@ -433,10 +433,24 @@ CryptoVault Financial, Inc.
         """
         if self.mode == 'sendgrid' and self.client:
             if retry:
-                return await self._send_with_retry(to_email, subject, html_content, text_content)
+                return await self._send_with_retry(
+                    self._send_sendgrid,
+                    to_email,
+                    subject,
+                    html_content,
+                    text_content,
+                )
             return await self._send_sendgrid(to_email, subject, html_content, text_content)
 
         if self.mode == 'resend':
+            if retry:
+                return await self._send_with_retry(
+                    self._send_resend,
+                    to_email,
+                    subject,
+                    html_content,
+                    text_content,
+                )
             return await self._send_resend(to_email, subject, html_content, text_content)
 
         if self.mode == 'smtp':
@@ -446,35 +460,35 @@ CryptoVault Financial, Inc.
     
     async def _send_with_retry(
         self,
+        send_func: Callable[[str, str, str, str], Awaitable[bool]],
         to_email: str,
         subject: str,
         html_content: str,
-        text_content: str
+        text_content: str,
     ) -> bool:
-        """Send email with exponential backoff retry logic."""
+        """Send email with exponential backoff retry logic for API providers."""
         last_error = None
-        
+
         for attempt in range(EMAIL_RETRY_CONFIG["max_retries"]):
             try:
-                success = await self._send_sendgrid(to_email, subject, html_content, text_content)
+                success = await send_func(to_email, subject, html_content, text_content)
                 if success:
                     if attempt > 0:
                         logger.info(f"✅ Email sent after {attempt + 1} attempts to {to_email}")
                     return True
-                    
             except Exception as e:
                 last_error = e
                 logger.warning(f"⚠️ Email attempt {attempt + 1} failed: {str(e)}")
-            
+
             # Calculate backoff delay
             if attempt < EMAIL_RETRY_CONFIG["max_retries"] - 1:
                 delay = min(
                     EMAIL_RETRY_CONFIG["base_delay"] * (EMAIL_RETRY_CONFIG["exponential_base"] ** attempt),
-                    EMAIL_RETRY_CONFIG["max_delay"]
+                    EMAIL_RETRY_CONFIG["max_delay"],
                 )
                 logger.info(f"⏳ Retrying email in {delay:.1f}s...")
                 await asyncio.sleep(delay)
-        
+
         logger.error(f"❌ Email failed after {EMAIL_RETRY_CONFIG['max_retries']} attempts to {to_email}")
         if last_error:
             logger.error(f"   Last error: {str(last_error)}")
