@@ -103,16 +103,16 @@ services:
         value: "200"
       
       # ============================================
-      # EMAIL (SendGrid)
+      # EMAIL (Resend)
       # ============================================
       - key: EMAIL_SERVICE
-        value: sendgrid
+        value: resend
       - key: EMAIL_FROM
         value: team@cryptovault.financial
       - key: EMAIL_FROM_NAME
         value: "CryptoVault Financial"
-      - key: SENDGRID_API_KEY
-        sync: false  # Set as secret - NEED NEW VALID KEY
+      - key: RESEND_API_KEY
+        sync: false  # Set as secret
       
       # ============================================
       # TELEGRAM NOTIFICATIONS

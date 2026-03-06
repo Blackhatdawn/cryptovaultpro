@@ -44,7 +44,7 @@ The CryptoVault application has a **solid enterprise-grade foundation** with exc
 1. ✅ ~~Install frontend dependencies~~ (Already completed)
 2. ✅ ~~Fix email service configuration~~ (Already completed)
 3. ✅ ~~Fix signup timeout issue~~ (Already completed)
-4. ⚠️ **Configure production email service** (SendGrid or SMTP)
+4. ⚠️ **Configure production email service** (Resend, SMTP, or SendGrid)
 5. ⚠️ **Disable Earn/Staking feature** (incomplete backend)
 6. ⚠️ **Set all required environment variables**
 7. ⚠️ **Test critical user flows** (signup → verify → login → trade)
@@ -96,16 +96,16 @@ ENVIRONMENT=production
 
 #### Email Service (CRITICAL - Choose One)
 
-**Option 1: SendGrid (Recommended)**
+**Option 1: Resend (Recommended)**
 ```bash
-EMAIL_SERVICE=sendgrid
-SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxx
+EMAIL_SERVICE=resend
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxx
 EMAIL_FROM=team@cryptovault.financial
 EMAIL_FROM_NAME=CryptoVault Financial
 EMAIL_VERIFICATION_URL=https://www.cryptovault.financial/verify
 ```
 
-**Option 2: SMTP**
+**Option 2: SMTP (Alternative)**
 ```bash
 EMAIL_SERVICE=smtp
 SMTP_HOST=smtp.gmail.com
@@ -215,9 +215,9 @@ VITE_SENTRY_ENVIRONMENT=production
 - [ ] Configure CORS_ORIGINS with production domain(s)
 
 #### Email Service Configuration (CRITICAL)
-- [ ] Choose email provider (SendGrid recommended)
-- [ ] Set EMAIL_SERVICE=sendgrid (or smtp)
-- [ ] Configure SENDGRID_API_KEY or SMTP credentials
+- [ ] Choose email provider (Resend recommended)
+- [ ] Set EMAIL_SERVICE=resend (or smtp/sendgrid)
+- [ ] Configure RESEND_API_KEY (or SMTP/SENDGRID credentials)
 - [ ] Set EMAIL_FROM and EMAIL_FROM_NAME
 - [ ] Set EMAIL_VERIFICATION_URL to production URL
 - [ ] **Test email sending** with test account
@@ -663,7 +663,7 @@ k6 run scripts/load-test.js
 
 #### External Services
 - **Email delivery rate**
-  - Monitor SendGrid/SMTP success rate
+  - Monitor Resend/SMTP/SendGrid success rate
   - Alert if <95% delivery rate
 - **Payment processing**
   - Monitor NOWPayments API status
@@ -931,12 +931,16 @@ k6 run scripts/load-test.js
 ```bash
 # Check email service configuration
 echo $EMAIL_SERVICE
-# Must be: sendgrid or smtp
+# Must be: resend, sendgrid, or smtp
 # NEVER: mock
 
-# For SendGrid
-echo $SENDGRID_API_KEY
+# For Resend
+echo $RESEND_API_KEY
 # Must be set and valid
+
+# For SendGrid (optional legacy provider)
+echo $SENDGRID_API_KEY
+# Must be set if EMAIL_SERVICE=sendgrid
 
 # For SMTP
 echo $SMTP_HOST
@@ -958,7 +962,7 @@ curl -X POST https://api.cryptovault.financial/api/auth/signup \
 
 **Failure Modes:**
 - ❌ EMAIL_SERVICE=mock → Users cannot verify emails → Cannot login
-- ❌ Invalid SendGrid API key → Emails fail silently
+- ❌ Invalid Resend API key → Emails fail silently
 - ❌ Wrong SMTP credentials → Emails fail silently
 - ❌ Email timeout >15s → Signup appears to fail
 
@@ -1090,7 +1094,7 @@ chmod +x scripts/validate-production-config.sh
 
 ### Day 1: Environment & Configuration
 - [ ] Set all required environment variables
-- [ ] Configure email service (SendGrid/SMTP)
+- [ ] Configure email service (Resend/SMTP/SendGrid)
 - [ ] Set up MongoDB database
 - [ ] Create database indexes
 - [ ] Configure Redis cache

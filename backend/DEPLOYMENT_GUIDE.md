@@ -9,7 +9,7 @@ Set these in Render Dashboard (never commit actual secret values):
 - `MONGO_URL`
 - `JWT_SECRET`
 - `CSRF_SECRET`
-- `SENDGRID_API_KEY`
+- `RESEND_API_KEY`
 - `COINCAP_API_KEY`
 - `NOWPAYMENTS_API_KEY`
 - `NOWPAYMENTS_IPN_SECRET`
