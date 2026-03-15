@@ -1,9 +1,10 @@
 """Referral endpoints for dashboard integrations."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from dependencies import get_current_user_id, get_db
+from referral_service import ReferralService
 from config import settings
 
 router = APIRouter(prefix="/referrals", tags=["referrals"])
@@ -11,28 +12,20 @@ router = APIRouter(prefix="/referrals", tags=["referrals"])
 
 @router.get("/summary")
 async def get_referral_summary(user_id: str = Depends(get_current_user_id), db=Depends(get_db)):
-    users = db.get_collection("users")
-    referrals = db.get_collection("referrals")
-
-    user = await users.find_one({"id": user_id})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    referral_code = user.get("referral_code") or f"CV{user_id[-6:].upper()}"
-    app_url = settings.app_url.rstrip("/")
-
-    total_referrals = await referrals.count_documents({"referrer_id": user_id})
-    active_referrals = await referrals.count_documents({"referrer_id": user_id, "status": "qualified"})
-    pending_referrals = await referrals.count_documents({"referrer_id": user_id, "status": "pending"})
+    service = ReferralService(db)
+    stats = await service.get_referral_stats(user_id)
+    if "error" in stats:
+        raise HTTPException(status_code=404, detail=stats["error"])
 
     return {
-        "referralCode": referral_code,
-        "referralLink": f"{app_url}/auth?ref={referral_code}",
-        "totalReferrals": total_referrals,
-        "activeReferrals": active_referrals,
-        "pendingReferrals": pending_referrals,
-        "totalEarned": float(user.get("referral_earnings", 0.0)),
-        "commissionRate": 10,
+        "referralCode": stats["referral_code"],
+        "referralLink": stats["referral_link"],
+        "totalReferrals": stats["total_referrals"],
+        "activeReferrals": stats["qualified_referrals"],
+        "pendingReferrals": stats["pending_referrals"],
+        "totalEarned": float(stats["total_earnings"]),
+        "bonusPerReferral": stats["bonus_per_referral"],
+        "recentReferrals": stats["recent_referrals"],
     }
 
 
@@ -50,9 +43,17 @@ async def list_referrals(user_id: str = Depends(get_current_user_id), db=Depends
         items.append({
             "id": ref.get("id") or str(ref.get("_id")),
             "email": masked_email,
+            "name": (referee.get("name", "")[:2] + "***") if referee else "Unknown",
             "status": ref.get("status", "pending"),
-            "earned": round(float(ref.get("rewards_paid", 0.0)), 2),
-            "date": (ref.get("created_at") or datetime.utcnow()).date().isoformat(),
+            "reward": round(float(ref.get("referrer_reward", 0.0)), 2),
+            "date": (ref.get("created_at") or datetime.now(timezone.utc)).isoformat(),
         })
 
     return {"referrals": items}
+
+
+@router.get("/leaderboard")
+async def get_leaderboard(db=Depends(get_db)):
+    service = ReferralService(db)
+    leaderboard = await service.get_leaderboard(limit=10)
+    return {"leaderboard": leaderboard}

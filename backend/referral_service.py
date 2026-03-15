@@ -1,70 +1,66 @@
 """
 Referral System Service
-Handles referral codes, tracking, and rewards
+Fixed bonus model: $10 credited to both referrer and referred user on signup.
+Rewards are credited directly to wallet balance (USD).
 """
 import random
 import string
 import logging
+import uuid
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class ReferralService:
-    """Referral program management"""
-    
-    # Reward configuration
-    REFERRER_REWARD_PERCENT = 10.0  # 10% of referee's trading fees
-    REFEREE_BONUS = 10.0  # $10 bonus for referee after first trade
-    MIN_TRADE_VOLUME = 100.0  # Minimum trade volume to qualify
-    REWARD_DURATION_MONTHS = 3  # Lifetime or limited months
-    
+    """Referral program management - Fixed bonus model"""
+
+    SIGNUP_BONUS_REFERRER = 10.0   # $10 for the person who shared the code
+    SIGNUP_BONUS_REFEREE  = 10.0   # $10 for the new user who signed up
+
     def __init__(self, db):
         self.db = db
-    
+
+    # ------------------------------------------------------------------
+    # Referral code helpers
+    # ------------------------------------------------------------------
+
     def generate_referral_code(self, length: int = 8) -> str:
-        """Generate unique referral code"""
         chars = string.ascii_uppercase + string.digits
-        # Remove confusing characters
         chars = chars.replace('O', '').replace('0', '').replace('I', '').replace('1', '')
         return ''.join(random.choices(chars, k=length))
-    
+
     async def get_or_create_referral_code(self, user_id: str) -> str:
-        """Get existing or create new referral code for user"""
         users_col = self.db.get_collection("users")
-        
         user = await users_col.find_one({"id": user_id})
         if not user:
             raise ValueError("User not found")
-        
-        # Check if user already has a code
+
         existing_code = user.get("referral_code")
         if existing_code:
             return existing_code
-        
-        # Generate new unique code
-        for _ in range(10):  # Max 10 attempts
+
+        for _ in range(10):
             code = self.generate_referral_code()
-            # Check uniqueness
-            existing = await users_col.find_one({"referral_code": code})
-            if not existing:
-                # Save to user
+            if not await users_col.find_one({"referral_code": code}):
                 await users_col.update_one(
                     {"id": user_id},
-                    {"$set": {"referral_code": code, "referral_code_created_at": datetime.utcnow()}}
+                    {"$set": {"referral_code": code, "referral_code_created_at": datetime.now(timezone.utc)}}
                 )
                 return code
-        
+
         raise Exception("Failed to generate unique referral code")
-    
+
     def normalize_referral_code(self, referral_code: str) -> str:
-        """Normalize referral code input for consistent lookups."""
         return (referral_code or "").strip().upper()
 
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
     async def validate_referral_code(self, referee_id: str, referral_code: str) -> Dict[str, Any]:
-        """Validate referral code and return referrer metadata without side effects."""
         users_col = self.db.get_collection("users")
         referrals_col = self.db.get_collection("referrals")
 
@@ -92,21 +88,20 @@ class ReferralService:
             "referral_code": normalized_code,
         }
 
+    # ------------------------------------------------------------------
+    # Apply referral on signup  (core change: instant $10 both sides)
+    # ------------------------------------------------------------------
+
     async def apply_referral_code(
         self,
         referee_id: str,
         referral_code: str,
         validation: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Apply referral code when new user signs up
-        
-        Args:
-            referee_id: ID of the new user being referred
-            referral_code: Referral code from the referrer
-        """
         users_col = self.db.get_collection("users")
         referrals_col = self.db.get_collection("referrals")
+        wallets_col = self.db.get_collection("wallets")
+        transactions_col = self.db.get_collection("transactions")
 
         if validation is None:
             validation = await self.validate_referral_code(referee_id, referral_code)
@@ -115,182 +110,155 @@ class ReferralService:
 
         referrer_id = validation["referrer_id"]
         referral_code = validation["referral_code"]
-        
-        # Create referral record
+        now = datetime.now(timezone.utc)
+
+        # 1. Create referral record
         referral_doc = {
+            "id": str(uuid.uuid4()),
             "referrer_id": referrer_id,
             "referee_id": referee_id,
             "referral_code": referral_code,
-            "status": "pending",  # pending, qualified, expired
-            "referee_trade_volume": 0,
-            "rewards_paid": 0,
-            "created_at": datetime.utcnow(),
-            "qualified_at": None,
-            "expires_at": datetime.utcnow() + timedelta(days=90)  # 90 days to qualify
+            "status": "qualified",
+            "referrer_reward": self.SIGNUP_BONUS_REFERRER,
+            "referee_reward": self.SIGNUP_BONUS_REFEREE,
+            "created_at": now,
+            "qualified_at": now,
         }
-        
         await referrals_col.insert_one(referral_doc)
-        
-        # Update referrer's stats
+
+        # 2. Credit referee wallet ($10)
+        await self._credit_wallet(wallets_col, referee_id, self.SIGNUP_BONUS_REFEREE)
+
+        # 3. Credit referrer wallet ($10)
+        await self._credit_wallet(wallets_col, referrer_id, self.SIGNUP_BONUS_REFERRER)
+
+        # 4. Record transactions for audit trail
+        for uid, amount, desc in [
+            (referee_id, self.SIGNUP_BONUS_REFEREE, "Referral signup bonus (new user)"),
+            (referrer_id, self.SIGNUP_BONUS_REFERRER, "Referral reward (friend joined)"),
+        ]:
+            await transactions_col.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": uid,
+                "type": "referral_bonus",
+                "amount": amount,
+                "currency": "USD",
+                "status": "completed",
+                "description": desc,
+                "metadata": {"referral_id": referral_doc["id"], "referral_code": referral_code},
+                "created_at": now,
+            })
+
+        # 5. Update user stats
         await users_col.update_one(
             {"id": referrer_id},
             {
-                "$inc": {"total_referrals": 1},
-                "$push": {"referral_ids": referee_id}
-            }
+                "$inc": {"total_referrals": 1, "referral_earnings": self.SIGNUP_BONUS_REFERRER},
+                "$push": {"referral_ids": referee_id},
+            },
         )
-        
-        # Update referee's record
         await users_col.update_one(
             {"id": referee_id},
-            {"$set": {"referred_by": referrer_id, "referral_code_used": referral_code}}
+            {"$set": {"referred_by": referrer_id, "referral_code_used": referral_code}},
         )
-        
-        logger.info(f"✅ Referral applied: {referee_id} referred by {referrer_id}")
-        
+
+        # 6. Send in-app notifications (import lazily to avoid circular deps)
+        try:
+            from routers.notifications import create_notification
+            await create_notification(
+                self.db, referrer_id,
+                title="Referral Reward!",
+                message=f"Your friend just joined CryptoVault! ${self.SIGNUP_BONUS_REFERRER:.0f} has been added to your wallet.",
+                notification_type="success",
+                link="/referrals",
+            )
+            await create_notification(
+                self.db, referee_id,
+                title="Welcome Bonus!",
+                message=f"You've received a ${self.SIGNUP_BONUS_REFEREE:.0f} signup bonus from your referral!",
+                notification_type="success",
+                link="/wallet",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send referral notifications: {e}")
+
+        # 7. Send push notification to referrer
+        try:
+            from fcm_service import fcm_service
+            referrer = await users_col.find_one({"id": referrer_id})
+            fcm_token = referrer.get("fcm_token") if referrer else None
+            if fcm_token:
+                await fcm_service.send_referral_notification(
+                    token=fcm_token,
+                    referee_name=validation["referrer_name"],
+                    reward_amount=self.SIGNUP_BONUS_REFERRER,
+                )
+        except Exception:
+            pass
+
+        logger.info(f"Referral applied: {referee_id} referred by {referrer_id} | $10+$10 credited")
+
         return {
             "success": True,
             "referrer_name": validation["referrer_name"],
-            "message": f"Referral code applied! Trade ${self.MIN_TRADE_VOLUME}+ to unlock your bonus."
+            "message": f"Referral bonus applied! ${self.SIGNUP_BONUS_REFEREE:.0f} has been added to your wallet.",
         }
-    
-    async def process_trade_for_referral(
-        self, 
-        user_id: str, 
-        trade_volume: float,
-        trading_fee: float
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Process a trade and update referral rewards if applicable
-        
-        Args:
-            user_id: ID of the user who made the trade
-            trade_volume: Total trade volume in USD
-            trading_fee: Trading fee paid in USD
-        """
-        referrals_col = self.db.get_collection("referrals")
-        users_col = self.db.get_collection("users")
-        rewards_col = self.db.get_collection("referral_rewards")
-        
-        # Find referral record where this user is the referee
-        referral = await referrals_col.find_one({
-            "referee_id": user_id,
-            "status": {"$in": ["pending", "qualified"]}
-        })
-        
-        if not referral:
-            return None
-        
-        referrer_id = referral["referrer_id"]
-        current_volume = referral.get("referee_trade_volume", 0)
-        new_volume = current_volume + trade_volume
-        
-        # Check if within reward period (if limited)
-        created_at = referral.get("created_at")
-        if self.REWARD_DURATION_MONTHS > 0 and created_at:
-            cutoff = created_at + timedelta(days=30 * self.REWARD_DURATION_MONTHS)
-            if datetime.utcnow() > cutoff:
-                await referrals_col.update_one(
-                    {"_id": referral["_id"]},
-                    {"$set": {"status": "expired"}}
-                )
-                return None
-        
-        # Calculate referrer reward
-        referrer_reward = trading_fee * (self.REFERRER_REWARD_PERCENT / 100)
-        
-        updates = {
-            "referee_trade_volume": new_volume,
-            "rewards_paid": referral.get("rewards_paid", 0) + referrer_reward
-        }
-        
-        result = {
-            "referrer_reward": referrer_reward,
-            "referee_bonus": 0
-        }
-        
-        # Check if referee just qualified
-        if referral["status"] == "pending" and new_volume >= self.MIN_TRADE_VOLUME:
-            updates["status"] = "qualified"
-            updates["qualified_at"] = datetime.utcnow()
-            result["referee_bonus"] = self.REFEREE_BONUS
-            
-            # Credit referee bonus
-            await users_col.update_one(
-                {"id": user_id},
-                {"$inc": {"balance": self.REFEREE_BONUS}}
+
+    # ------------------------------------------------------------------
+    # Wallet credit helper
+    # ------------------------------------------------------------------
+
+    async def _credit_wallet(self, wallets_col, user_id: str, amount: float):
+        wallet = await wallets_col.find_one({"user_id": user_id})
+        if wallet:
+            current = wallet.get("balances", {}).get("USD", 0.0)
+            await wallets_col.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "balances.USD": current + amount,
+                    "updated_at": datetime.now(timezone.utc),
+                }},
             )
-            
-            logger.info(f"🎉 Referee {user_id} qualified! Bonus: ${self.REFEREE_BONUS}")
-        
-        # Update referral record
-        await referrals_col.update_one(
-            {"_id": referral["_id"]},
-            {"$set": updates}
-        )
-        
-        # Credit referrer reward
-        await users_col.update_one(
-            {"id": referrer_id},
-            {"$inc": {"referral_earnings": referrer_reward, "balance": referrer_reward}}
-        )
-        
-        # Log reward transaction
-        await rewards_col.insert_one({
-            "referrer_id": referrer_id,
-            "referee_id": user_id,
-            "trade_volume": trade_volume,
-            "trading_fee": trading_fee,
-            "reward_amount": referrer_reward,
-            "created_at": datetime.utcnow()
-        })
-        
-        if referrer_reward > 0:
-            logger.info(f"💰 Referral reward: ${referrer_reward:.2f} to {referrer_id}")
-        
-        return result
-    
+        else:
+            await wallets_col.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "balances": {"USD": amount},
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            })
+
+    # ------------------------------------------------------------------
+    # Stats & leaderboard
+    # ------------------------------------------------------------------
+
     async def get_referral_stats(self, user_id: str) -> Dict[str, Any]:
-        """Get referral statistics for a user"""
         users_col = self.db.get_collection("users")
         referrals_col = self.db.get_collection("referrals")
-        
+
         user = await users_col.find_one({"id": user_id})
         if not user:
             return {"error": "User not found"}
-        
-        # Get referral code
+
         referral_code = await self.get_or_create_referral_code(user_id)
-        
-        # Count referrals by status
+
         total_referrals = await referrals_col.count_documents({"referrer_id": user_id})
-        qualified_referrals = await referrals_col.count_documents({
-            "referrer_id": user_id,
-            "status": "qualified"
-        })
-        pending_referrals = await referrals_col.count_documents({
-            "referrer_id": user_id,
-            "status": "pending"
-        })
-        
-        # Calculate total earnings
+        qualified_referrals = await referrals_col.count_documents({"referrer_id": user_id, "status": "qualified"})
+        pending_referrals = await referrals_col.count_documents({"referrer_id": user_id, "status": "pending"})
+
         total_earnings = user.get("referral_earnings", 0)
-        
-        # Get recent referrals
-        recent_cursor = referrals_col.find(
-            {"referrer_id": user_id}
-        ).sort("created_at", -1).limit(10)
-        
+
+        recent_cursor = referrals_col.find({"referrer_id": user_id}).sort("created_at", -1).limit(10)
         recent_referrals = []
         async for ref in recent_cursor:
             referee = await users_col.find_one({"id": ref["referee_id"]})
             recent_referrals.append({
-                "referee_name": referee.get("name", "Anonymous")[:2] + "***" if referee else "Unknown",
+                "referee_name": (referee.get("name", "Anonymous")[:2] + "***") if referee else "Unknown",
                 "status": ref["status"],
-                "trade_volume": ref.get("referee_trade_volume", 0),
-                "created_at": ref["created_at"].isoformat()
+                "reward": ref.get("referrer_reward", 0),
+                "created_at": ref["created_at"].isoformat() if ref.get("created_at") else None,
             })
-        
+
         return {
             "referral_code": referral_code,
             "referral_link": f"{settings.app_url.rstrip('/')}/auth?ref={referral_code}",
@@ -298,33 +266,28 @@ class ReferralService:
             "qualified_referrals": qualified_referrals,
             "pending_referrals": pending_referrals,
             "total_earnings": total_earnings,
-            "reward_rate": f"{self.REFERRER_REWARD_PERCENT}%",
-            "min_trade_volume": self.MIN_TRADE_VOLUME,
-            "recent_referrals": recent_referrals
+            "bonus_per_referral": self.SIGNUP_BONUS_REFERRER,
+            "recent_referrals": recent_referrals,
         }
-    
+
     async def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get top referrers leaderboard"""
         users_col = self.db.get_collection("users")
-        
         cursor = users_col.find(
             {"referral_earnings": {"$gt": 0}},
-            {"name": 1, "referral_earnings": 1, "total_referrals": 1}
+            {"name": 1, "referral_earnings": 1, "total_referrals": 1, "_id": 0},
         ).sort("referral_earnings", -1).limit(limit)
-        
+
         leaderboard = []
         rank = 1
         async for user in cursor:
-            # Mask name for privacy
             name = user.get("name", "Anonymous")
-            masked_name = name[0] + "*" * (len(name) - 2) + name[-1] if len(name) > 2 else name
-            
+            masked = name[0] + "*" * (len(name) - 2) + name[-1] if len(name) > 2 else name
             leaderboard.append({
                 "rank": rank,
-                "name": masked_name,
+                "name": masked,
                 "referrals": user.get("total_referrals", 0),
-                "earnings": user.get("referral_earnings", 0)
+                "earnings": user.get("referral_earnings", 0),
             })
             rank += 1
-        
+
         return leaderboard

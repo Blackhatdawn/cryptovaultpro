@@ -61,6 +61,16 @@ const Auth = () => {
     }
   }, [user, navigate]);
 
+  // Auto-fill referral code from URL param (?ref=CODE)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const refCode = params.get('ref');
+    if (refCode) {
+      setReferralCode(refCode.toUpperCase());
+      setIsLogin(false); // Switch to signup when referral link is used
+    }
+  }, [location.search]);
+
   const validateForm = (): boolean => {
     const schema = isLogin ? signInSchema : signUpSchema;
     const formData = isLogin

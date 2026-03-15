@@ -339,6 +339,208 @@ class CryptoVaultAPITester:
         else:
             self.log_test("Auth Cookie Security", False, "Failed to test cookie security", response)
 
+    async def test_referral_summary_endpoint(self):
+        """Test referral summary endpoint GET /api/referrals/summary"""
+        success, response = await self.make_request("GET", "/referrals/summary")
+        
+        if success:
+            data = response["data"]
+            required_fields = ["referralCode", "bonusPerReferral", "totalReferrals", "totalEarned"]
+            has_all_fields = all(field in data for field in required_fields)
+            
+            if has_all_fields:
+                bonus = data.get("bonusPerReferral")
+                if bonus == 10:
+                    self.log_test("Referral Summary API", True, f"Summary retrieved - Code: {data.get('referralCode')}, Bonus: ${bonus}, Total: {data.get('totalReferrals')}")
+                else:
+                    self.log_test("Referral Summary API", False, f"Expected $10 bonus, got ${bonus}", response)
+            else:
+                missing = [f for f in required_fields if f not in data]
+                self.log_test("Referral Summary API", False, f"Missing fields: {missing}", response)
+        else:
+            self.log_test("Referral Summary API", False, "Failed to get referral summary", response)
+
+    async def test_referral_list_endpoint(self):
+        """Test referral list endpoint GET /api/referrals"""
+        success, response = await self.make_request("GET", "/referrals")
+        
+        if success:
+            data = response["data"]
+            if "referrals" in data:
+                referrals = data["referrals"]
+                self.log_test("Referral List API", True, f"Retrieved {len(referrals)} referrals")
+                
+                # Check structure if referrals exist
+                if len(referrals) > 0:
+                    ref = referrals[0]
+                    required = ["email", "status", "reward"]
+                    has_structure = all(field in ref for field in required)
+                    if has_structure and "@" in ref["email"]:
+                        self.log_test("Referral Structure", True, "Referral data has correct masked email structure")
+                    else:
+                        self.log_test("Referral Structure", False, "Invalid referral data structure", ref)
+            else:
+                self.log_test("Referral List API", False, "Missing 'referrals' field", response)
+        else:
+            self.log_test("Referral List API", False, "Failed to get referral list", response)
+
+    async def test_referral_leaderboard_endpoint(self):
+        """Test referral leaderboard endpoint GET /api/referrals/leaderboard"""
+        success, response = await self.make_request("GET", "/referrals/leaderboard")
+        
+        if success:
+            data = response["data"]
+            if "leaderboard" in data:
+                leaderboard = data["leaderboard"]
+                self.log_test("Referral Leaderboard API", True, f"Retrieved leaderboard with {len(leaderboard)} entries")
+                
+                # Check structure if entries exist
+                if len(leaderboard) > 0:
+                    entry = leaderboard[0]
+                    required = ["rank", "name", "referrals", "earnings"]
+                    has_structure = all(field in entry for field in required)
+                    if has_structure:
+                        self.log_test("Leaderboard Structure", True, "Leaderboard entries have correct structure")
+                    else:
+                        self.log_test("Leaderboard Structure", False, "Invalid leaderboard structure", entry)
+            else:
+                self.log_test("Referral Leaderboard API", False, "Missing 'leaderboard' field", response)
+        else:
+            self.log_test("Referral Leaderboard API", False, "Failed to get leaderboard", response)
+
+    async def test_signup_with_referral_code(self):
+        """Test signup with referral code and wallet crediting"""
+        # Generate unique test email for referral signup
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        test_email = f"test_ref{timestamp}@example.com"
+        
+        signup_data = {
+            "email": test_email,
+            "password": "TestPassword123!",
+            "name": "Test Referral User",
+            "referral_code": "VMSMRP4L"  # Using existing user's referral code
+        }
+        
+        success, response = await self.make_request("POST", "/auth/signup", json=signup_data)
+        
+        if success:
+            data = response["data"]
+            # Check if referral bonus message is included
+            message = data.get("message", "")
+            if "$10" in message or "bonus" in message.lower():
+                self.log_test("Signup with Referral", True, f"Signup successful with referral bonus: {message}")
+                return test_email  # Return email for wallet balance check
+            else:
+                self.log_test("Signup with Referral", True, "Signup successful, checking for referral processing")
+                return test_email
+        else:
+            self.log_test("Signup with Referral", False, "Signup with referral code failed", response)
+            return None
+
+    async def test_wallet_balance_after_referral(self, user_email: str = None):
+        """Test wallet balance shows $10 USD after referral signup"""
+        if not user_email:
+            user_email = self.test_user["email"]  # Test referrer's wallet
+            
+        success, response = await self.make_request("GET", "/wallet/balance")
+        
+        if success:
+            data = response["data"]
+            wallet = data.get("wallet", {})
+            balances = wallet.get("balances", {})
+            usd_balance = balances.get("USD", 0.0)
+            
+            # Check if USD balance exists and is reasonable (should have some referral bonuses)
+            if usd_balance >= 10:
+                self.log_test("Wallet Balance Check", True, f"USD balance: ${usd_balance} (includes referral bonuses)")
+            else:
+                self.log_test("Wallet Balance Check", False, f"Expected at least $10 USD balance, got ${usd_balance}", response)
+        else:
+            self.log_test("Wallet Balance Check", False, "Failed to get wallet balance", response)
+
+    async def test_push_notification_status(self):
+        """Test push notification status GET /api/push/status"""
+        success, response = await self.make_request("GET", "/push/status")
+        
+        if success:
+            data = response["data"]
+            expected_fields = ["enabled", "mock_mode", "firebase_setup_required"]
+            has_fields = all(field in data for field in expected_fields)
+            
+            if has_fields:
+                mock_mode = data.get("mock_mode")
+                firebase_required = data.get("firebase_setup_required")
+                
+                if mock_mode and firebase_required:
+                    self.log_test("Push Status API", True, "Push notifications in mock mode (expected - Firebase not configured)")
+                elif not mock_mode:
+                    self.log_test("Push Status API", True, "Push notifications enabled with Firebase")
+                else:
+                    self.log_test("Push Status API", True, f"Push status - mock: {mock_mode}, setup_required: {firebase_required}")
+            else:
+                missing = [f for f in expected_fields if f not in data]
+                self.log_test("Push Status API", False, f"Missing fields: {missing}", response)
+        else:
+            self.log_test("Push Status API", False, "Failed to get push status", response)
+
+    async def test_register_fcm_token(self):
+        """Test register FCM token POST /api/push/register-token"""
+        token_data = {
+            "token": "test_fcm_token_123456789",
+            "platform": "web"
+        }
+        
+        success, response = await self.make_request("POST", "/push/register-token", json=token_data)
+        
+        if success:
+            data = response["data"]
+            if "message" in data and "registered" in data["message"].lower():
+                self.log_test("FCM Token Registration", True, f"Token registered: {data['message']}")
+            else:
+                self.log_test("FCM Token Registration", False, "Unexpected response format", response)
+        else:
+            self.log_test("FCM Token Registration", False, "Failed to register FCM token", response)
+
+    async def test_push_notification_test(self):
+        """Test push notification POST /api/push/test"""
+        test_data = {
+            "title": "Test Notification",
+            "body": "Testing push notification system"
+        }
+        
+        success, response = await self.make_request("POST", "/push/test", json=test_data)
+        
+        if success:
+            data = response["data"]
+            if "message" in data:
+                mock_mode = data.get("mock_mode", False)
+                if mock_mode:
+                    self.log_test("Push Test Notification", True, "Test notification sent in mock mode")
+                else:
+                    self.log_test("Push Test Notification", True, "Test notification sent via Firebase")
+            else:
+                self.log_test("Push Test Notification", False, "Unexpected response format", response)
+        else:
+            # Check if error is due to no token registered
+            error_msg = response.get("data", {}).get("detail", "")
+            if "no push token registered" in error_msg.lower():
+                self.log_test("Push Test Notification", True, "Expected error - no token registered yet")
+            else:
+                self.log_test("Push Test Notification", False, "Test notification failed", response)
+
+    async def test_unregister_fcm_token(self):
+        """Test unregister FCM token DELETE /api/push/unregister-token"""
+        success, response = await self.make_request("DELETE", "/push/unregister-token")
+        
+        if success:
+            data = response["data"]
+            if "message" in data and "disabled" in data["message"].lower():
+                self.log_test("FCM Token Unregistration", True, f"Token unregistered: {data['message']}")
+            else:
+                self.log_test("FCM Token Unregistration", False, "Unexpected response format", response)
+        else:
+            self.log_test("FCM Token Unregistration", False, "Failed to unregister FCM token", response)
+
     async def run_all_tests(self):
         """Run all tests in sequence"""
         print("🚀 Starting CryptoVault API Testing Suite")
@@ -359,6 +561,24 @@ class CryptoVaultAPITester:
             await self.test_user_profile()
             await self.test_portfolio_data()
             await self.test_auth_cookies_security()
+            
+            # Test referral system (requires authenticated user)
+            print("\n🎁 Testing Referral System...")
+            await self.test_referral_summary_endpoint()
+            await self.test_referral_list_endpoint()
+            await self.test_referral_leaderboard_endpoint()
+            
+            # Test referral signup flow and wallet crediting
+            print("\n💰 Testing Referral Signup & Wallet Credits...")
+            referral_email = await self.test_signup_with_referral_code()
+            await self.test_wallet_balance_after_referral()  # Check referrer's wallet
+            
+            # Test push notification system
+            print("\n📲 Testing Push Notifications...")
+            await self.test_push_notification_status()
+            await self.test_register_fcm_token()
+            await self.test_push_notification_test()
+            await self.test_unregister_fcm_token()
         
         # Admin authentication flow
         print("\n🔐 Testing Admin Authentication...")

@@ -11,6 +11,7 @@ bidict==0.23.1
 black==26.1.0
 boto3==1.42.58
 botocore==1.42.58
+CacheControl==0.14.4
 certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.4
@@ -26,6 +27,7 @@ fastapi==0.110.1
 fastjsonschema==2.21.2
 fastuuid==0.14.0
 filelock==3.25.0
+firebase_admin==7.2.0
 flake8==7.3.0
 frozenlist==1.8.0
 fsspec==2026.2.0
@@ -34,6 +36,8 @@ google-api-core==2.30.0
 google-api-python-client==2.191.0
 google-auth==2.49.0.dev0
 google-auth-httplib2==0.3.0
+google-cloud-core==2.5.0
+google-cloud-firestore==2.25.0
 google-cloud-storage==3.9.0
 google-crc32c==1.8.0
 google-genai==1.64.0

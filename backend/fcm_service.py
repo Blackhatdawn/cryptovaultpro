@@ -1,313 +1,169 @@
 """
 Firebase Cloud Messaging (FCM) Service
-Push notifications for price alerts, order confirmations, etc.
-Supports MOCK mode when Firebase credentials are not configured
+Handles push notification delivery with automatic mock fallback.
 """
-import os
 import json
+import os
 import logging
-from typing import Optional, Dict, Any, List
-from datetime import datetime
-import uuid
-
-from config import settings
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Firebase Admin SDK
-firebase_initialized = False
-firebase_app = None
-mock_mode = False
-
-def initialize_firebase():
-    """Initialize Firebase Admin SDK"""
-    global firebase_initialized, firebase_app, mock_mode
-    
-    if firebase_initialized:
-        return True
-    
-    try:
-        import firebase_admin
-        from firebase_admin import credentials
-        
-        # Try to get credentials from environment
-        creds_json = os.environ.get("FIREBASE_CREDENTIALS_JSON")
-        creds_path = os.environ.get("FIREBASE_CREDENTIALS_PATH")
-        
-        if creds_json:
-            # Parse JSON from environment variable
-            creds_dict = json.loads(creds_json)
-            cred = credentials.Certificate(creds_dict)
-        elif creds_path and os.path.exists(creds_path):
-            # Load from file
-            cred = credentials.Certificate(creds_path)
-        else:
-            logger.warning("⚠️ Firebase credentials not found - FCM running in MOCK mode")
-            mock_mode = True
-            firebase_initialized = True
-            return True
-        
-        firebase_app = firebase_admin.initialize_app(cred)
-        firebase_initialized = True
-        logger.info("✅ Firebase Admin SDK initialized")
-        return True
-        
-    except ImportError:
-        logger.warning("⚠️ firebase-admin not installed - FCM running in MOCK mode")
-        mock_mode = True
-        firebase_initialized = True
-        return True
-    except Exception as e:
-        logger.error(f"❌ Firebase initialization failed: {e} - Running in MOCK mode")
-        mock_mode = True
-        firebase_initialized = True
-        return True
-
 
 class FCMService:
-    """Firebase Cloud Messaging service for push notifications (with mock fallback)"""
-    
+    """Firebase Cloud Messaging service with graceful fallback."""
+
     def __init__(self):
-        self.initialized = initialize_firebase()
-        self.mock_mode = mock_mode
-        if self.mock_mode:
-            logger.info("📱 FCM Service running in MOCK mode")
-    
+        self.mock_mode = True
+        self.app = None
+        self._initialize()
+
+    def _initialize(self):
+        """Try to initialize Firebase Admin SDK."""
+        try:
+            import firebase_admin
+            from firebase_admin import credentials
+
+            # Option 1: JSON string from environment variable
+            creds_json = os.environ.get("FIREBASE_CREDENTIALS_JSON")
+            if creds_json:
+                cred_dict = json.loads(creds_json)
+                cred = credentials.Certificate(cred_dict)
+                self.app = firebase_admin.initialize_app(cred)
+                self.mock_mode = False
+                logger.info("FCM initialized from FIREBASE_CREDENTIALS_JSON")
+                return
+
+            # Option 2: JSON file path
+            creds_path = os.environ.get("FIREBASE_CREDENTIALS_PATH")
+            if creds_path and os.path.exists(creds_path):
+                cred = credentials.Certificate(creds_path)
+                self.app = firebase_admin.initialize_app(cred)
+                self.mock_mode = False
+                logger.info(f"FCM initialized from {creds_path}")
+                return
+
+            logger.info("FCM running in MOCK mode (no Firebase credentials found)")
+
+        except Exception as e:
+            logger.warning(f"FCM initialization failed, using mock mode: {e}")
+            self.mock_mode = True
+
     async def send_notification(
         self,
         token: str,
         title: str,
         body: str,
         data: Optional[Dict[str, str]] = None,
-        image_url: Optional[str] = None
+        image: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Send push notification to a single device
-        
-        Args:
-            token: FCM device token
-            title: Notification title
-            body: Notification body
-            data: Additional data payload
-            image_url: Image URL for rich notification
-        """
-        # MOCK MODE: Log and return success
+        """Send a push notification to a single device."""
         if self.mock_mode:
-            mock_id = f"mock-msg-{str(uuid.uuid4())[:8]}"
-            logger.info(f"📱 [MOCK] Notification sent: {title} - {body}")
-            return {
-                "success": True,
-                "mock": True,
-                "message_id": mock_id
-            }
-        
-        if not self.initialized:
-            logger.warning("FCM not initialized, skipping notification")
-            return {"success": False, "error": "FCM not initialized"}
-        
+            logger.info(f"[MOCK FCM] -> {title}: {body} (token: {token[:20]}...)")
+            return {"mock": True, "status": "sent", "title": title}
+
         try:
             from firebase_admin import messaging
-            
-            # Build notification
+
             notification = messaging.Notification(
                 title=title,
                 body=body,
-                image=image_url
+                image=image,
             )
-            
-            # Build message
+
             message = messaging.Message(
                 notification=notification,
                 token=token,
                 data=data or {},
-                # Android specific config
-                android=messaging.AndroidConfig(
-                    priority="high",
-                    notification=messaging.AndroidNotification(
-                        icon="ic_notification",
-                        color="#F59E0B",
-                        sound="default",
-                        click_action="OPEN_APP"
-                    )
-                ),
-                # Web push config
                 webpush=messaging.WebpushConfig(
                     notification=messaging.WebpushNotification(
                         icon="/logo.svg",
                         badge="/logo.svg",
-                        vibrate=[200, 100, 200]
                     ),
                     fcm_options=messaging.WebpushFCMOptions(
-                        link=settings.app_url.rstrip("/")
-                    )
-                )
+                        link="/dashboard",
+                    ),
+                ),
             )
-            
-            # Send message
+
             response = messaging.send(message)
-            logger.info(f"✅ FCM notification sent: {response}")
-            
-            return {
-                "success": True,
-                "message_id": response
-            }
-            
+            logger.info(f"FCM sent: {response}")
+            return {"mock": False, "status": "sent", "message_id": response}
+
         except Exception as e:
-            logger.error(f"❌ FCM send error: {e}")
-            return {"success": False, "error": str(e)}
-    
-    async def send_multicast(
+            logger.error(f"FCM send failed: {e}")
+            return {"mock": False, "status": "error", "error": str(e)}
+
+    async def send_to_multiple(
         self,
-        tokens: List[str],
+        tokens: list,
         title: str,
         body: str,
-        data: Optional[Dict[str, str]] = None
+        data: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Send notification to multiple devices"""
-        # MOCK MODE
+        """Send notification to multiple devices."""
         if self.mock_mode:
-            logger.info(f"📱 [MOCK] Multicast notification to {len(tokens)} devices: {title}")
-            return {
-                "success": True,
-                "mock": True,
-                "success_count": len(tokens),
-                "failure_count": 0
-            }
-        
-        if not self.initialized:
-            return {"success": False, "error": "FCM not initialized"}
-        
+            logger.info(f"[MOCK FCM] -> {title} to {len(tokens)} devices")
+            return {"mock": True, "status": "sent", "count": len(tokens)}
+
         try:
             from firebase_admin import messaging
-            
-            notification = messaging.Notification(title=title, body=body)
-            
+
             message = messaging.MulticastMessage(
-                notification=notification,
+                notification=messaging.Notification(title=title, body=body),
                 tokens=tokens,
                 data=data or {},
-                android=messaging.AndroidConfig(priority="high"),
-                webpush=messaging.WebpushConfig(
-                    notification=messaging.WebpushNotification(
-                        icon="/logo.svg"
-                    )
-                )
             )
-            
-            response = messaging.send_multicast(message)
-            
+
+            response = messaging.send_each_for_multicast(message)
+            logger.info(f"FCM multicast: {response.success_count} sent, {response.failure_count} failed")
             return {
-                "success": True,
+                "mock": False,
                 "success_count": response.success_count,
-                "failure_count": response.failure_count
+                "failure_count": response.failure_count,
             }
-            
+
         except Exception as e:
-            logger.error(f"FCM multicast error: {e}")
-            return {"success": False, "error": str(e)}
-    
-    async def send_price_alert(
-        self,
-        token: str,
-        symbol: str,
-        current_price: float,
-        target_price: float,
-        condition: str
-    ) -> Dict[str, Any]:
-        """Send price alert notification"""
-        direction = "above" if condition == "above" else "below"
-        emoji = "🚀" if condition == "above" else "📉"
-        
-        title = f"{emoji} {symbol} Price Alert!"
-        body = f"{symbol} is now ${current_price:,.2f} – {direction} your target of ${target_price:,.2f}"
-        
+            logger.error(f"FCM multicast failed: {e}")
+            return {"mock": False, "status": "error", "error": str(e)}
+
+    # ------------------------------------------------------------------
+    # Convenience methods for common notification types
+    # ------------------------------------------------------------------
+
+    async def send_referral_notification(self, token: str, referee_name: str, reward_amount: float):
         return await self.send_notification(
             token=token,
-            title=title,
-            body=body,
-            data={
-                "type": "price_alert",
-                "symbol": symbol,
-                "price": str(current_price),
-                "target": str(target_price),
-                "condition": condition
-            }
+            title="Referral Reward!",
+            body=f"Your friend just joined CryptoVault! ${reward_amount:.0f} has been added to your wallet.",
+            data={"type": "referral_reward", "amount": str(reward_amount)},
         )
-    
-    async def send_order_confirmation(
-        self,
-        token: str,
-        order_type: str,
-        symbol: str,
-        amount: float,
-        price: float,
-        order_id: str
-    ) -> Dict[str, Any]:
-        """Send order confirmation notification"""
-        emoji = "✅" if order_type == "buy" else "💰"
-        action = "bought" if order_type == "buy" else "sold"
-        
-        title = f"{emoji} Order Filled!"
-        body = f"You {action} {amount:.6f} {symbol} at ${price:,.2f}"
-        
+
+    async def send_price_alert(self, token: str, symbol: str, price: float, direction: str):
+        arrow = "above" if direction == "above" else "below"
         return await self.send_notification(
             token=token,
-            title=title,
-            body=body,
-            data={
-                "type": "order_confirmation",
-                "order_id": order_id,
-                "order_type": order_type,
-                "symbol": symbol,
-                "amount": str(amount),
-                "price": str(price)
-            }
+            title=f"Price Alert: {symbol}",
+            body=f"{symbol} is now {arrow} ${price:,.2f}",
+            data={"type": "price_alert", "symbol": symbol, "price": str(price)},
         )
-    
-    async def send_deposit_confirmation(
-        self,
-        token: str,
-        amount: float,
-        currency: str,
-        payment_id: str
-    ) -> Dict[str, Any]:
-        """Send deposit confirmation notification"""
-        title = "💰 Deposit Received!"
-        body = f"Your deposit of ${amount:,.2f} has been credited to your account"
-        
+
+    async def send_order_notification(self, token: str, order_type: str, symbol: str, status: str):
         return await self.send_notification(
             token=token,
-            title=title,
-            body=body,
-            data={
-                "type": "deposit_confirmation",
-                "amount": str(amount),
-                "currency": currency,
-                "payment_id": payment_id
-            }
+            title=f"Order {status.title()}",
+            body=f"Your {order_type} order for {symbol} has been {status}.",
+            data={"type": "order_confirmation", "symbol": symbol, "status": status},
         )
-    
-    async def send_referral_notification(
-        self,
-        token: str,
-        referee_name: str,
-        reward_amount: float
-    ) -> Dict[str, Any]:
-        """Send referral reward notification"""
-        title = "🎉 Referral Reward!"
-        body = f"{referee_name} joined via your link! You earned ${reward_amount:.2f}"
-        
+
+    async def send_deposit_notification(self, token: str, amount: float, currency: str):
         return await self.send_notification(
             token=token,
-            title=title,
-            body=body,
-            data={
-                "type": "referral_reward",
-                "referee": referee_name,
-                "reward": str(reward_amount)
-            }
+            title="Deposit Confirmed",
+            body=f"${amount:,.2f} {currency} has been credited to your wallet.",
+            data={"type": "deposit_confirmation", "amount": str(amount), "currency": currency},
         )
 
 
-# Global service instance
+# Global singleton
 fcm_service = FCMService()

@@ -94,7 +94,7 @@ const Referrals = () => {
           Referral Program
         </h1>
         <p className="text-gray-400 mt-1">
-          Invite friends and earn 10% of their trading fees
+          Invite friends and you both get $10 credited to your wallet
         </p>
       </div>
 
@@ -154,8 +154,8 @@ const Referrals = () => {
                 <Gift className="h-6 w-6 text-blue-400" />
               </div>
               <div>
-                <p className="text-sm text-gray-400">Commission Rate</p>
-                <p className="text-2xl font-bold text-white">10%</p>
+                <p className="text-sm text-gray-400">Bonus Per Referral</p>
+                <p className="text-2xl font-bold text-white">$10</p>
               </div>
             </div>
           </DashboardCard>
@@ -270,9 +270,9 @@ const Referrals = () => {
                 3
               </div>
               <div>
-                <h4 className="font-medium text-white">Earn Rewards</h4>
+                <h4 className="font-medium text-white">Both Get $10</h4>
                 <p className="text-sm text-gray-400 mt-1">
-                  Earn 10% of their trading fees for life!
+                  You both receive $10 credited directly to your wallets!
                 </p>
               </div>
             </div>
@@ -318,7 +318,7 @@ const Referrals = () => {
                   </span>
                 </div>
                 <div className="text-emerald-400 font-semibold">
-                  ${referral.earned.toFixed(2)}
+                  ${(referral.reward ?? referral.earned ?? 0).toFixed(2)}
                 </div>
                 <div className="text-gray-400 text-sm">
                   {new Date(referral.date).toLocaleDateString()}

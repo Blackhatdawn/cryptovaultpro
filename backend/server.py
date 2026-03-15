@@ -23,7 +23,7 @@ from config import settings, validate_startup_environment, get_settings
 from database import DatabaseConnection
 
 # Routers
-from routers import auth, portfolio, trading, crypto, admin, wallet, alerts, transactions, prices, websocket, transfers, users, notifications, monitoring, config, files, referrals, earn, contact
+from routers import auth, portfolio, trading, crypto, admin, wallet, alerts, transactions, prices, websocket, transfers, users, notifications, monitoring, config, files, referrals, earn, contact, push
 
 # Services
 from services.telegram_bot import telegram_bot
@@ -750,6 +750,7 @@ app.include_router(files.router, prefix="/api", tags=["files"])  # KYC file uplo
 app.include_router(referrals.router, prefix="/api")
 app.include_router(earn.router, prefix="/api")
 app.include_router(contact.router, prefix="/api")
+app.include_router(push.router, prefix="/api")
 
 # Admin dashboard (custom prefix already in router)
 from routers.admin import router as admin_dashboard_router
