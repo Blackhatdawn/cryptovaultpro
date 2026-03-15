@@ -118,14 +118,15 @@ class RedisCache:
             if not isinstance(value, str):
                 value = json.dumps(value)
             
-            # Use SETEX command via REST API: /setex/key/seconds/value
-            import urllib.parse
-            encoded_value = urllib.parse.quote(value)
-            
+            # Use POST-based Upstash REST API (more reliable for complex values)
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(
-                    f"{self.redis_url}/setex/{key}/{ttl}/{encoded_value}",
-                    headers={"Authorization": f"Bearer {self.redis_token}"}
+                response = await client.post(
+                    self.redis_url,
+                    headers={
+                        "Authorization": f"Bearer {self.redis_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=["SETEX", key, str(ttl), value]
                 )
                 
                 return response.status_code == 200

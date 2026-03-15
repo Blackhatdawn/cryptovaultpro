@@ -69,24 +69,26 @@ class RedisEnhanced:
         
         try:
             message_json = json.dumps(message)
-            import urllib.parse
-            encoded_message = urllib.parse.quote(message_json)
             
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(
-                    f"{self.redis_url}/publish/{channel}/{encoded_message}",
-                    headers={"Authorization": f"Bearer {self.redis_token}"}
+                response = await client.post(
+                    self.redis_url,
+                    headers={
+                        "Authorization": f"Bearer {self.redis_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=["PUBLISH", channel, message_json]
                 )
                 
                 if response.status_code == 200:
-                    logger.debug(f"📡 Published to {channel}: {message}")
+                    logger.debug(f"Published to {channel}")
                     return True
                 else:
                     logger.warning(f"Publish failed: {response.status_code}")
                     return False
         
         except Exception as e:
-            logger.error(f"❌ Publish error to '{channel}': {str(e)}")
+            logger.error(f"Publish error to '{channel}': {str(e)}")
             return False
     
     async def subscribe(self, channel: str, callback: Callable[[Dict], None]):
@@ -262,21 +264,24 @@ class RedisEnhanced:
         }
         
         try:
-            import urllib.parse
-            value = urllib.parse.quote(json.dumps(token_data))
+            value = json.dumps(token_data)
             
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(
-                    f"{self.redis_url}/setex/{key}/{ttl}/{value}",
-                    headers={"Authorization": f"Bearer {self.redis_token}"}
+                response = await client.post(
+                    self.redis_url,
+                    headers={
+                        "Authorization": f"Bearer {self.redis_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=["SETEX", key, str(ttl), value]
                 )
                 
                 if response.status_code == 200:
-                    logger.debug(f"✅ Stored refresh token for user {user_id}")
+                    logger.debug(f"Stored refresh token for user {user_id}")
                     return True
         
         except Exception as e:
-            logger.error(f"❌ Failed to store refresh token: {str(e)}")
+            logger.error(f"Failed to store refresh token: {str(e)}")
         
         return False
     

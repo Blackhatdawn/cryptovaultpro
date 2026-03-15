@@ -49,10 +49,17 @@ const Auth = () => {
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [showRecommendedSetup, setShowRecommendedSetup] = useState(false);
 
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+
+  // Redirect to dashboard when user state is set (fixes race condition)
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [user, navigate]);
 
   const validateForm = (): boolean => {
     const schema = isLogin ? signInSchema : signUpSchema;
@@ -161,7 +168,7 @@ const Auth = () => {
             title: "Welcome back!",
             description: "You have successfully signed in",
           });
-          navigate("/dashboard");
+          // Navigation handled by useEffect watching user state
         }
       } else {
         if (signupStep === 1) {
@@ -192,7 +199,7 @@ const Auth = () => {
             title: "Account created!",
             description: "Welcome to CryptoVault! Your account is ready.",
           });
-          navigate("/dashboard");
+          // Navigation handled by useEffect watching user state
         } else {
           // Email verification required
           toast({

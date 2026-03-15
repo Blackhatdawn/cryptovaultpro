@@ -156,6 +156,7 @@ async def admin_login_request_otp(
     )
     
     # Send OTP via email
+    otp_response_code = None  # Only set in dev mode for mock email
     try:
         from email_service import email_service
         from email_templates import admin_otp_email
@@ -166,12 +167,16 @@ async def admin_login_request_otp(
         
         await email_service.send_email(
             to_email=admin["email"],
-            subject="🔐 CryptoVault Admin Login - OTP Verification",
+            subject="CryptoVault Admin Login - OTP Verification",
             html_content=html_content,
             text_content=text_content
         )
         
-        logger.info(f"✅ OTP sent to admin: {admin['email']}")
+        logger.info(f"OTP sent to admin: {admin['email']}")
+        
+        # In dev/mock mode, include OTP in response for testing
+        if settings.environment != "production" and settings.email_service == "mock":
+            otp_response_code = otp_code
         
         # Also notify via Telegram (if configured)
         try:
@@ -182,10 +187,14 @@ async def admin_login_request_otp(
         
     except Exception as e:
         logger.error(f"Failed to send OTP email: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send OTP. Please try again."
-        )
+        # In dev mode with mock email, don't fail - just return OTP
+        if settings.environment != "production" and settings.email_service == "mock":
+            otp_response_code = otp_code
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP. Please try again."
+            )
     
     # Log OTP request
     await log_admin_action(
@@ -197,11 +206,17 @@ async def admin_login_request_otp(
         ip_address=request.client.host if request.client else "unknown"
     )
     
-    return {
+    response_data = {
         "requires_otp": True,
         "message": "OTP sent to your email",
         "email": admin["email"]
     }
+    
+    # Include OTP in dev mode for testing
+    if otp_response_code:
+        response_data["dev_otp"] = otp_response_code
+    
+    return response_data
 
 
 @router.post("/verify-otp", response_model=AdminLoginResponse)
@@ -237,7 +252,10 @@ async def admin_verify_otp(
         )
     
     # Check if OTP has expired
-    if datetime.now(timezone.utc) > otp_expires:
+    now = datetime.now(timezone.utc)
+    # Handle timezone-naive datetime from MongoDB
+    otp_exp = otp_expires if otp_expires.tzinfo else otp_expires.replace(tzinfo=timezone.utc)
+    if now > otp_exp:
         # Clear expired OTP
         await db.admins.update_one(
             {"id": admin["id"]},

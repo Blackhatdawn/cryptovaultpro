@@ -10,7 +10,7 @@ interface OnboardingLoaderProps {
   minDisplayTime?: number;
 }
 
-const OnboardingLoader = ({ isLoading, minDisplayTime = 2000 }: OnboardingLoaderProps) => {
+const OnboardingLoader = ({ isLoading, minDisplayTime = 800 }: OnboardingLoaderProps) => {
   const [showLoader, setShowLoader] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
   const [hasMinTimeElapsed, setHasMinTimeElapsed] = useState(false);
@@ -35,12 +35,12 @@ const OnboardingLoader = ({ isLoading, minDisplayTime = 2000 }: OnboardingLoader
     }
   }, [isLoading, hasMinTimeElapsed]);
 
-  // Fallback: Force hide after max 5 seconds regardless of loading state
+  // Fallback: Force hide after max 2.5 seconds regardless of loading state
   useEffect(() => {
     const maxTimer = setTimeout(() => {
       setFadeOut(true);
-      setTimeout(() => setShowLoader(false), 500);
-    }, 5000);
+      setTimeout(() => setShowLoader(false), 300);
+    }, 2500);
     
     return () => clearTimeout(maxTimer);
   }, []);

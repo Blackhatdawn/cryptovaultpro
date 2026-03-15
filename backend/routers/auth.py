@@ -67,8 +67,8 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
     """
     # Determine SameSite policy based on configuration
     same_site = "none" if settings.use_cross_site_cookies else "lax"
-    # For SameSite=None, Secure must be True (only over HTTPS)
-    secure = settings.environment == 'production' or settings.use_cross_site_cookies
+    # Always set Secure=True when served over HTTPS (preview/production environments)
+    secure = True
 
     # Set access token cookie
     response.set_cookie(

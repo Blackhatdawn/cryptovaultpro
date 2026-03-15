@@ -58,7 +58,13 @@ const AdminLogin = () => {
       // Check if OTP is required
       if (data.requires_otp) {
         setOtpRequired(true);
-        toast.success('OTP sent to your email! Check your inbox.');
+        // In dev mode with mock email, auto-fill OTP
+        if (data.dev_otp) {
+          setOtpCode(data.dev_otp);
+          toast.success('Dev mode: OTP auto-filled');
+        } else {
+          toast.success('OTP sent to your email! Check your inbox.');
+        }
       } else {
         // Direct login (fallback for admins without OTP)
         if (data.token) {

@@ -156,8 +156,15 @@ function calculateQuality(pool: PooledConnection): ConnectionQuality {
  */
 function getDefaultUrl(): string {
   const wsBaseUrl = resolveWsBaseUrl();
-  // Use the new v2 enterprise endpoint
-  return wsBaseUrl ? `${wsBaseUrl}/ws/prices` : 'ws://localhost:8001/ws/prices';
+  if (wsBaseUrl) {
+    return `${wsBaseUrl}/ws/prices`;
+  }
+  // Derive from current page URL
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws/prices`;
+  }
+  return 'wss://localhost:8001/ws/prices';
 }
 
 // ============================================

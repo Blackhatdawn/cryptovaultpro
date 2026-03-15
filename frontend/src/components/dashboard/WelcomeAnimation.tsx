@@ -16,7 +16,7 @@ interface WelcomeAnimationProps {
 const WelcomeAnimation = ({
   userName,
   onComplete,
-  duration = 5000
+  duration = 3000
 }: WelcomeAnimationProps) => {
   const [show, setShow] = useState(true);
   const [phase, setPhase] = useState<'logo' | 'welcome' | 'fade'>('logo');

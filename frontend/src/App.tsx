@@ -20,7 +20,6 @@ import { Toaster as HotToaster } from 'react-hot-toast';
 import { healthCheckService } from "@/services/healthCheck";
 import { api } from "@/lib/apiClient";
 import DebugApiStatus from "@/components/DebugApiStatus";
-import { Analytics } from "@vercel/analytics/react";
 import { VersionMismatchBanner, ConnectionStatus } from "@/components/ui/version-banner";
 import { useVersionSync } from "@/hooks/useVersionSync";
 
@@ -311,9 +310,8 @@ const App = () => (
                   },
                 }}
               />
-              <BrowserRouter>
+              <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
                 <AppContent />
-                <Analytics />
               </BrowserRouter>
             </TooltipProvider>
           </SocketProvider>

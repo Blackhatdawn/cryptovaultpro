@@ -42,12 +42,12 @@ const getDefaultUrl = (): string => {
   if (wsBaseUrl) {
     return `${wsBaseUrl}/ws/prices`;
   }
-  // In dev/preview mode, derive from current page URL
+  // Derive from current page URL
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}/ws/prices`;
   }
-  return 'ws://localhost:8001/ws/prices';
+  return 'wss://localhost:8001/ws/prices';
 };
 
 export function usePriceWebSocket(options: UsePriceWebSocketOptions = {}) {
