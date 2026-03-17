@@ -73,9 +73,9 @@ fi
 echo ""
 echo "4. TypeScript compilation check..."
 cd /app/frontend
-if yarn tsc --noEmit 2>&1 | grep -q "error TS"; then
+if pnpm tsc --noEmit 2>&1 | grep -q "error TS"; then
     print_warning "TypeScript errors found"
-    echo "   Run: cd /app/frontend && yarn tsc --noEmit"
+    echo "   Run: cd /app/frontend && pnpm tsc --noEmit"
 else
     print_status "No TypeScript errors"
 fi
@@ -99,7 +99,7 @@ if [ -d "node_modules" ]; then
     print_status "Frontend dependencies installed"
 else
     print_warning "Frontend dependencies not installed"
-    echo "   Run: cd /app/frontend && yarn install"
+    echo "   Run: cd /app/frontend && pnpm install"
 fi
 
 # 7. Database connection test

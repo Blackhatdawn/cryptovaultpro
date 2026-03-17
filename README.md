@@ -51,7 +51,7 @@ pip install -r requirements.txt
 
 # Install frontend
 cd ../frontend
-npm install
+pnpm install
 ```
 
 ### 2. Configure
