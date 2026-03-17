@@ -23,9 +23,9 @@ Vercel should auto-detect these settings, but verify:
 
 ```bash
 Framework Preset: Vite
-Build Command: yarn build
+Build Command: pnpm build
 Output Directory: dist
-Install Command: yarn install
+Install Command: pnpm install --frozen-lockfile
 ```
 
 ### 3. Set Environment Variables
@@ -173,8 +173,8 @@ The build includes:
 #### 1. **Build Fails**
 ```bash
 # Check for TypeScript errors
-yarn lint
-yarn build
+pnpm lint
+pnpm build
 
 # Common fixes:
 - Update all dependencies

@@ -338,8 +338,7 @@ export function usePriceWebSocket(options: UsePriceWebSocketOptions = {}) {
       ws.close();
       websocketRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+  }, [url, log, updateStatus, onPriceUpdate]);
 
   return {
     prices,
