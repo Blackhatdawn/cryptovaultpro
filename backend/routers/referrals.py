@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from dependencies import get_current_user_id, get_db
 from referral_service import ReferralService
-from config import settings
 
 router = APIRouter(prefix="/referrals", tags=["referrals"])
 
@@ -17,6 +16,8 @@ async def get_referral_summary(user_id: str = Depends(get_current_user_id), db=D
     if "error" in stats:
         raise HTTPException(status_code=404, detail=stats["error"])
 
+    tier = stats["tier"]
+
     return {
         "referralCode": stats["referral_code"],
         "referralLink": stats["referral_link"],
@@ -24,7 +25,13 @@ async def get_referral_summary(user_id: str = Depends(get_current_user_id), db=D
         "activeReferrals": stats["qualified_referrals"],
         "pendingReferrals": stats["pending_referrals"],
         "totalEarned": float(stats["total_earnings"]),
-        "bonusPerReferral": stats["bonus_per_referral"],
+        "tier": {
+            "name": tier["name"],
+            "bonus": tier["bonus"],
+            "color": tier["color"],
+            "nextTier": tier["next_tier"],
+        },
+        "allTiers": stats["all_tiers"],
         "recentReferrals": stats["recent_referrals"],
     }
 
@@ -46,6 +53,7 @@ async def list_referrals(user_id: str = Depends(get_current_user_id), db=Depends
             "name": (referee.get("name", "")[:2] + "***") if referee else "Unknown",
             "status": ref.get("status", "pending"),
             "reward": round(float(ref.get("referrer_reward", 0.0)), 2),
+            "tier": ref.get("referrer_tier", "Bronze"),
             "date": (ref.get("created_at") or datetime.now(timezone.utc)).isoformat(),
         })
 
