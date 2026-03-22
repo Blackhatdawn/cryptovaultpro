@@ -34,13 +34,29 @@ class FCMService:
                 logger.info("FCM initialized from FIREBASE_CREDENTIALS_JSON")
                 return
 
-            # Option 2: JSON file path
+            # Option 2: JSON file path from env or settings
             creds_path = os.environ.get("FIREBASE_CREDENTIALS_PATH")
+            if not creds_path:
+                try:
+                    from config import settings
+                    creds_path = getattr(settings, 'firebase_credentials_path', None)
+                except Exception:
+                    pass
+
             if creds_path and os.path.exists(creds_path):
                 cred = credentials.Certificate(creds_path)
                 self.app = firebase_admin.initialize_app(cred)
                 self.mock_mode = False
                 logger.info(f"FCM initialized from {creds_path}")
+                return
+
+            # Option 3: Try default path
+            default_path = "/app/backend/firebase-credentials.json"
+            if os.path.exists(default_path):
+                cred = credentials.Certificate(default_path)
+                self.app = firebase_admin.initialize_app(cred)
+                self.mock_mode = False
+                logger.info(f"FCM initialized from default path {default_path}")
                 return
 
             logger.info("FCM running in MOCK mode (no Firebase credentials found)")
@@ -79,9 +95,6 @@ class FCMService:
                     notification=messaging.WebpushNotification(
                         icon="/logo.svg",
                         badge="/logo.svg",
-                    ),
-                    fcm_options=messaging.WebpushFCMOptions(
-                        link="/dashboard",
                     ),
                 ),
             )

@@ -17,6 +17,7 @@ class CryptoVaultAPITester:
         self.client = httpx.AsyncClient(timeout=30.0)
         self.session_cookies = {}
         self.admin_session_cookies = {}
+        self.current_referral_code = None  # Store current user's referral code
         
         # Test credentials
         self.test_user = {
@@ -345,15 +346,20 @@ class CryptoVaultAPITester:
         
         if success:
             data = response["data"]
-            required_fields = ["referralCode", "bonusPerReferral", "totalReferrals", "totalEarned"]
+            required_fields = ["referralCode", "totalReferrals", "totalEarned", "tier"]
             has_all_fields = all(field in data for field in required_fields)
             
             if has_all_fields:
-                bonus = data.get("bonusPerReferral")
-                if bonus == 10:
-                    self.log_test("Referral Summary API", True, f"Summary retrieved - Code: {data.get('referralCode')}, Bonus: ${bonus}, Total: {data.get('totalReferrals')}")
+                tier = data.get("tier", {})
+                bonus = tier.get("bonus")
+                tier_name = tier.get("name")
+                
+                if bonus and tier_name:
+                    self.log_test("Referral Summary API", True, f"Summary retrieved - Code: {data.get('referralCode')}, Tier: {tier_name}, Bonus: ${bonus}, Total: {data.get('totalReferrals')}")
+                    # Store referral code for later use
+                    self.current_referral_code = data.get('referralCode')
                 else:
-                    self.log_test("Referral Summary API", False, f"Expected $10 bonus, got ${bonus}", response)
+                    self.log_test("Referral Summary API", False, f"Missing tier info - bonus: {bonus}, tier: {tier_name}", response)
             else:
                 missing = [f for f in required_fields if f not in data]
                 self.log_test("Referral Summary API", False, f"Missing fields: {missing}", response)
@@ -410,6 +416,9 @@ class CryptoVaultAPITester:
 
     async def test_signup_with_referral_code(self):
         """Test signup with referral code and wallet crediting"""
+        # Use the current user's referral code if available, otherwise use a test code
+        referral_code = self.current_referral_code or "4BPTM9LV"  # Use dynamic code
+        
         # Generate unique test email for referral signup
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         test_email = f"test_ref{timestamp}@example.com"
@@ -418,7 +427,7 @@ class CryptoVaultAPITester:
             "email": test_email,
             "password": "TestPassword123!",
             "name": "Test Referral User",
-            "referral_code": "VMSMRP4L"  # Using existing user's referral code
+            "referral_code": referral_code
         }
         
         success, response = await self.make_request("POST", "/auth/signup", json=signup_data)
@@ -434,7 +443,11 @@ class CryptoVaultAPITester:
                 self.log_test("Signup with Referral", True, "Signup successful, checking for referral processing")
                 return test_email
         else:
-            self.log_test("Signup with Referral", False, "Signup with referral code failed", response)
+            error_msg = response.get("data", {}).get("error", {}).get("message", "")
+            if "invalid referral code" in error_msg.lower():
+                self.log_test("Signup with Referral", False, f"Invalid referral code '{referral_code}' - may need to use a valid existing code", response)
+            else:
+                self.log_test("Signup with Referral", False, "Signup with referral code failed", response)
             return None
 
     async def test_wallet_balance_after_referral(self, user_email: str = None):
