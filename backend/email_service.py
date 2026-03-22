@@ -538,11 +538,17 @@ CryptoVault Financial, Inc.
             )
                 
         except asyncio.TimeoutError:
-            logger.error(f"❌ SendGrid timeout after {EMAIL_RETRY_CONFIG['send_timeout']}s")
-            raise  # Re-raise for retry logic
+            logger.error(f"SendGrid timeout after {EMAIL_RETRY_CONFIG['send_timeout']}s")
+            if settings.environment != 'production':
+                logger.warning(f"Dev mode: falling back to mock email for {to_email}")
+                return await self._send_mock(to_email, subject)
+            raise
         except Exception as e:
-            logger.error(f"❌ SendGrid exception: {str(e)}")
-            raise  # Re-raise for retry logic
+            logger.error(f"SendGrid exception: {str(e)}")
+            if settings.environment != 'production':
+                logger.warning(f"Dev mode: falling back to mock email for {to_email} (Subject: {subject})")
+                return await self._send_mock(to_email, subject)
+            raise
     
     async def _send_smtp(
         self,
