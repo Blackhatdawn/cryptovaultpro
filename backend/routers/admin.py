@@ -174,15 +174,10 @@ async def admin_login_request_otp(
         
         logger.info(f"OTP sent to admin: {admin['email']}")
         
-        # In dev/mock mode, include OTP in response for testing
-        # Check actual runtime mode of email service, not just config setting
+        # In non-production environments, always include OTP in response
+        # because email delivery may be unreliable (mock/invalid credentials)
         if settings.environment != "production":
-            try:
-                is_mock = getattr(email_service, 'mode', '') == 'mock' or settings.email_service == "mock"
-            except Exception:
-                is_mock = settings.email_service == "mock"
-            if is_mock:
-                otp_response_code = otp_code
+            otp_response_code = otp_code
         
         # Also notify via Telegram (if configured)
         try:
@@ -193,19 +188,9 @@ async def admin_login_request_otp(
         
     except Exception as e:
         logger.error(f"Failed to send OTP email: {str(e)}")
-        # In dev mode with mock email, don't fail - just return OTP
+        # In non-production, return OTP anyway since email is unreliable
         if settings.environment != "production":
-            try:
-                is_mock = getattr(email_service, 'mock_mode', False) or settings.email_service == "mock"
-            except Exception:
-                is_mock = settings.email_service == "mock"
-            if is_mock:
-                otp_response_code = otp_code
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to send OTP. Please try again."
-                )
+            otp_response_code = otp_code
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
