@@ -18,12 +18,15 @@ class RedisCache:
     """
     Redis caching service with Upstash REST API.
     Gracefully falls back to in-memory caching if Redis is unavailable.
+    Auto-disables on repeated failures to prevent log spam.
     """
     
     def __init__(self):
         self.use_redis = settings.is_redis_available()
         self.redis_url = settings.upstash_redis_rest_url
         self.redis_token = settings.upstash_redis_rest_token
+        self._consecutive_failures = 0
+        self._max_failures = 3  # Auto-disable after 3 consecutive failures
         
         # In-memory fallback cache
         self.memory_cache: Dict[str, tuple[Any, float]] = {}
@@ -33,7 +36,18 @@ class RedisCache:
         self.PRICE_TTL = 60  # 1 minute for prices
         self.SESSION_TTL = 3600  # 1 hour for sessions
         
-        logger.info(f"💾 Redis Cache initialized (redis={self.use_redis})")
+        logger.info(f"Redis Cache initialized (redis={self.use_redis})")
+    
+    def _record_failure(self):
+        """Track consecutive Redis failures and auto-disable if threshold hit."""
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._max_failures and self.use_redis:
+            logger.warning(f"Redis disabled after {self._consecutive_failures} consecutive failures. Using in-memory cache.")
+            self.use_redis = False
+
+    def _record_success(self):
+        """Reset failure counter on successful Redis operation."""
+        self._consecutive_failures = 0
     
     async def get(self, key: str) -> Optional[Any]:
         """Get value from cache."""
@@ -86,16 +100,15 @@ class RedisCache:
                 )
                 
                 if response.status_code == 200:
+                    self._record_success()
                     data = response.json()
                     result = data.get("result")
                     
                     if result is None:
                         return None
                     
-                    # Try to parse JSON - may need double parse if value was string-serialized
                     try:
                         parsed = json.loads(result)
-                        # If it's still a string, try parsing again (double-encoded)
                         if isinstance(parsed, str):
                             try:
                                 return json.loads(parsed)
@@ -105,20 +118,19 @@ class RedisCache:
                     except (json.JSONDecodeError, TypeError):
                         return result
                 
-                return None
+                self._record_failure()
+                return self._get_memory(key)
                 
         except Exception as e:
-            logger.warning(f"⚠️ Redis GET error for '{key}': {str(e)}. Using memory cache.")
+            self._record_failure()
             return self._get_memory(key)
     
     async def _set_redis(self, key: str, value: Any, ttl: int) -> bool:
         """Set in Redis via REST API with TTL."""
         try:
-            # Serialize value to JSON
             if not isinstance(value, str):
                 value = json.dumps(value)
             
-            # Use POST-based Upstash REST API (more reliable for complex values)
             async with httpx.AsyncClient(timeout=5) as client:
                 response = await client.post(
                     self.redis_url,
@@ -129,10 +141,14 @@ class RedisCache:
                     json=["SETEX", key, str(ttl), value]
                 )
                 
-                return response.status_code == 200
+                if response.status_code == 200:
+                    self._record_success()
+                    return True
+                self._record_failure()
+                return self._set_memory(key, value, ttl)
                 
         except Exception as e:
-            logger.warning(f"⚠️ Redis SET error for '{key}': {str(e)}. Using memory cache.")
+            self._record_failure()
             return self._set_memory(key, value, ttl)
     
     async def _delete_redis(self, key: str) -> bool:
