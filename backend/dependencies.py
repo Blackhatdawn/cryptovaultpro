@@ -90,8 +90,8 @@ async def get_current_user_id(request: Request) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Decode and validate token
-    payload = decode_token(token)
+    # Decode and validate token - MUST be an access token (C5 fix)
+    payload = decode_token(token, expected_type="access")
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

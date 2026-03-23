@@ -143,7 +143,17 @@ class EmailService:
         elif configured_service == 'smtp':
             if self.smtp_host:
                 self.mode = 'smtp'
-                logger.info("✅ Email service initialized with SMTP")
+                logger.info(f"Email service initialized with SMTP ({self.smtp_host}:{self.smtp_port})")
+                # Validate SMTP credentials on startup (non-production only)
+                if not is_production:
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Schedule validation for after startup
+                            asyncio.ensure_future(self._validate_smtp())
+                    except RuntimeError:
+                        pass
             else:
                 # FIX #3: In production, FAIL LOUDLY if SMTP is misconfigured
                 if is_production:
@@ -528,11 +538,17 @@ CryptoVault Financial, Inc.
             )
                 
         except asyncio.TimeoutError:
-            logger.error(f"❌ SendGrid timeout after {EMAIL_RETRY_CONFIG['send_timeout']}s")
-            raise  # Re-raise for retry logic
+            logger.error(f"SendGrid timeout after {EMAIL_RETRY_CONFIG['send_timeout']}s")
+            if settings.environment != 'production':
+                logger.warning(f"Dev mode: falling back to mock email for {to_email}")
+                return await self._send_mock(to_email, subject)
+            raise
         except Exception as e:
-            logger.error(f"❌ SendGrid exception: {str(e)}")
-            raise  # Re-raise for retry logic
+            logger.error(f"SendGrid exception: {str(e)}")
+            if settings.environment != 'production':
+                logger.warning(f"Dev mode: falling back to mock email for {to_email} (Subject: {subject})")
+                return await self._send_mock(to_email, subject)
+            raise
     
     async def _send_smtp(
         self,
@@ -541,7 +557,7 @@ CryptoVault Financial, Inc.
         html_content: str,
         text_content: str
     ) -> bool:
-        """Send email via SMTP with timeout."""
+        """Send email via SMTP with timeout. Falls back to mock in dev mode on auth failure."""
         try:
             message = EmailMessage()
             message["From"] = f"{self.from_name} <{self.from_email}>"
@@ -550,7 +566,6 @@ CryptoVault Financial, Inc.
             message.set_content(text_content)
             message.add_alternative(html_content, subtype="html")
 
-            # FIX #2: Reduce SMTP timeout from 20s to 5s to match send_timeout config
             await aiosmtplib.send(
                 message,
                 hostname=self.smtp_host,
@@ -559,13 +574,39 @@ CryptoVault Financial, Inc.
                 password=self.smtp_password if self.smtp_password else None,
                 start_tls=False if self.smtp_use_ssl else self.smtp_use_tls,
                 use_tls=self.smtp_use_ssl,
-                timeout=EMAIL_RETRY_CONFIG["send_timeout"],  # Reduced from 20 to 5 seconds
+                timeout=EMAIL_RETRY_CONFIG["send_timeout"],
             )
-            logger.info(f"✅ SMTP email sent successfully to {to_email}")
+            logger.info(f"SMTP email sent successfully to {to_email}")
             return True
-        except Exception as e:
-            logger.error(f"❌ SMTP exception: {str(e)}")
+        except aiosmtplib.SMTPAuthenticationError as e:
+            logger.error(f"SMTP authentication failed: {e}. Check SMTP_USERNAME/SMTP_PASSWORD.")
+            if settings.environment != 'production':
+                logger.warning(f"Dev mode: falling back to mock email for {to_email} (Subject: {subject})")
+                return await self._send_mock(to_email, subject)
             return False
+        except Exception as e:
+            logger.error(f"SMTP exception: {str(e)}")
+            if settings.environment != 'production':
+                logger.warning(f"Dev mode: falling back to mock email for {to_email}")
+                return await self._send_mock(to_email, subject)
+            return False
+
+    async def _validate_smtp(self):
+        """Validate SMTP credentials on startup (dev mode only)."""
+        try:
+            smtp = aiosmtplib.SMTP(
+                hostname=self.smtp_host,
+                port=self.smtp_port,
+                start_tls=False if self.smtp_use_ssl else self.smtp_use_tls,
+                use_tls=self.smtp_use_ssl,
+                timeout=5,
+            )
+            await smtp.connect()
+            await smtp.login(self.smtp_username, self.smtp_password)
+            await smtp.quit()
+            logger.info(f"SMTP credentials validated ({self.smtp_host})")
+        except Exception as e:
+            logger.warning(f"SMTP validation failed: {e}. Emails will fall back to mock mode in dev.")
 
     async def _send_resend(
         self,

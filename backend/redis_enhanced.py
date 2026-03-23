@@ -16,12 +16,15 @@ class RedisEnhanced:
     """
     Enhanced Redis service with pub/sub, Lua scripts, and atomic operations.
     Uses Upstash REST API for serverless Redis operations.
+    Auto-disables on repeated failures to prevent log spam.
     """
     
     def __init__(self):
         self.use_redis = settings.is_redis_available()
         self.redis_url = settings.upstash_redis_rest_url
         self.redis_token = settings.upstash_redis_rest_token
+        self._consecutive_failures = 0
+        self._max_failures = 3
         
         # Pub/Sub subscribers
         self.subscribers: Dict[str, List[Callable]] = {}
@@ -52,7 +55,16 @@ class RedisEnhanced:
             """
         }
         
-        logger.info(f"🚀 Enhanced Redis initialized (enabled={self.use_redis})")
+        logger.info(f"Enhanced Redis initialized (enabled={self.use_redis})")
+    
+    def _record_failure(self):
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self._max_failures and self.use_redis:
+            logger.warning(f"Enhanced Redis disabled after {self._consecutive_failures} consecutive failures.")
+            self.use_redis = False
+
+    def _record_success(self):
+        self._consecutive_failures = 0
     
     # ============================================
     # PUB/SUB OPERATIONS
@@ -81,14 +93,15 @@ class RedisEnhanced:
                 )
                 
                 if response.status_code == 200:
+                    self._record_success()
                     logger.debug(f"Published to {channel}")
                     return True
                 else:
-                    logger.warning(f"Publish failed: {response.status_code}")
+                    self._record_failure()
                     return False
         
         except Exception as e:
-            logger.error(f"Publish error to '{channel}': {str(e)}")
+            self._record_failure()
             return False
     
     async def subscribe(self, channel: str, callback: Callable[[Dict], None]):

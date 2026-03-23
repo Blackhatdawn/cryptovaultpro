@@ -174,8 +174,9 @@ async def admin_login_request_otp(
         
         logger.info(f"OTP sent to admin: {admin['email']}")
         
-        # In dev/mock mode, include OTP in response for testing
-        if settings.environment != "production" and settings.email_service == "mock":
+        # In non-production environments, always include OTP in response
+        # because email delivery may be unreliable (mock/invalid credentials)
+        if settings.environment != "production":
             otp_response_code = otp_code
         
         # Also notify via Telegram (if configured)
@@ -187,8 +188,8 @@ async def admin_login_request_otp(
         
     except Exception as e:
         logger.error(f"Failed to send OTP email: {str(e)}")
-        # In dev mode with mock email, don't fail - just return OTP
-        if settings.environment != "production" and settings.email_service == "mock":
+        # In non-production, return OTP anyway since email is unreliable
+        if settings.environment != "production":
             otp_response_code = otp_code
         else:
             raise HTTPException(
@@ -349,7 +350,7 @@ async def admin_verify_otp(
     
     # Set secure cookie (15-minute idle timeout for enhanced security)
     same_site = "none" if settings.use_cross_site_cookies else "lax"
-    secure = settings.is_production or settings.use_cross_site_cookies
+    secure = True  # Always Secure - preview and production both use HTTPS
     response.set_cookie(
         key="admin_token",
         value=token,

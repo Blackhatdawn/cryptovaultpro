@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Request, Response, status, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote_plus
 import uuid
 import bcrypt
@@ -29,11 +29,11 @@ from auth import (
     verify_password, get_password_hash,
     create_access_token, create_refresh_token,
     decode_token, generate_backup_codes, generate_2fa_secret,
-    generate_device_fingerprint, verify_2fa_code
+    generate_device_fingerprint, verify_2fa_code, get_token_jti
 )
 from referral_service import ReferralService
 from dependencies import get_current_user_id, get_db
-from blacklist import blacklist_token
+from blacklist import blacklist_token, is_token_blacklisted
 from redis_cache import redis_cache
 
 logger = logging.getLogger(__name__)
@@ -57,20 +57,11 @@ def validate_password_policy(password: str) -> None:
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     """
     Set authentication cookies with proper SameSite and Secure attributes.
-
-    When frontend and API are on different origins (cross-site), use SameSite=None with Secure=True.
-    When on same origin, use SameSite=Lax for better security.
-
-    Configuration:
-    - Set USE_CROSS_SITE_COOKIES=true in environment if frontend and API are on different origins
-    - For production cross-site auth: requires CORS_ORIGINS to be specific (not '*') and HTTPS
+    H5 FIX: Unified cookie security logic.
     """
-    # Determine SameSite policy based on configuration
     same_site = "none" if settings.use_cross_site_cookies else "lax"
-    # Always set Secure=True when served over HTTPS (preview/production environments)
-    secure = True
+    secure = True  # Always Secure - preview and production both use HTTPS
 
-    # Set access token cookie
     response.set_cookie(
         key="access_token",
         value=access_token,
@@ -81,7 +72,6 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         path="/"
     )
 
-    # Set refresh token cookie
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -339,11 +329,11 @@ async def login(
         raise HTTPException(status_code=401, detail="Invalid credentials")
     user = User(**user_doc)
 
-    if user.locked_until and user.locked_until > datetime.utcnow():
-        minutes_left = int((user.locked_until - datetime.utcnow()).total_seconds() / 60)
+    if user.locked_until and user.locked_until.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+        # H3 FIX: Use generic error to prevent account state enumeration
         raise HTTPException(
-            status_code=429,
-            detail=f"Account locked due to too many failed attempts. Try again in {minutes_left} minutes."
+            status_code=401,
+            detail="Invalid credentials"
         )
 
     device_fingerprint = generate_device_fingerprint(request)
@@ -353,18 +343,18 @@ async def login(
         "email": credentials.email,
         "ip_address": request.client.host,
         "device_fingerprint": device_fingerprint,
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(timezone.utc),
         "success": False
     }
     if not verify_password(credentials.password, user.password_hash):
         failed_attempts = user.failed_login_attempts + 1
         update_data = {
             "failed_login_attempts": failed_attempts,
-            "last_failed_attempt": datetime.utcnow()
+            "last_failed_attempt": datetime.now(timezone.utc)
         }
         
         if failed_attempts >= 5:
-            update_data["locked_until"] = datetime.utcnow() + timedelta(minutes=15)
+            update_data["locked_until"] = datetime.now(timezone.utc) + timedelta(minutes=15)
             try:
                 await asyncio.wait_for(
                     users_collection.update_one({"id": user.id}, {"$set": update_data}),
@@ -380,10 +370,8 @@ async def login(
                 )
             except asyncio.TimeoutError:
                 logger.error(f"Database timeout during failed login attempt for user: {user.id}")
-            raise HTTPException(
-                status_code=429,
-                detail="Account locked for 15 minutes due to too many failed login attempts."
-            )
+            # H3 FIX: Generic error to prevent enumeration
+            raise HTTPException(status_code=401, detail="Invalid credentials")
         
         try:
             await asyncio.wait_for(
@@ -421,7 +409,7 @@ async def login(
                 {"$set": {
                     "failed_login_attempts": 0,
                     "locked_until": None,
-                    "last_login": datetime.utcnow()
+                    "last_login": datetime.now(timezone.utc)
                 }}
             ),
             timeout=DB_QUERY_TIMEOUT
@@ -467,21 +455,30 @@ async def logout(
     user_id: str = Depends(get_current_user_id),
     db = Depends(get_db)
 ):
-    """Secure logout: Blacklist tokens and delete cookies."""
+    """Secure logout: Blacklist tokens from both cookies and Authorization header, then delete cookies."""
     refresh_token = request.cookies.get("refresh_token")
     access_token = request.cookies.get("access_token")
 
-    if refresh_token:
-        payload = decode_token(refresh_token)
-        if payload and payload.get("type") == "refresh":
-            expires_in = int(payload["exp"] - datetime.utcnow().timestamp())
-            await blacklist_token(refresh_token, max(expires_in, 60))
+    # Also check Authorization header for Bearer token
+    auth_header = request.headers.get("Authorization", "")
+    bearer_token = None
+    if auth_header.startswith("Bearer "):
+        bearer_token = auth_header[7:]
 
+    # Blacklist all tokens found
+    tokens_to_blacklist = set()
+    if refresh_token:
+        tokens_to_blacklist.add(("refresh", refresh_token))
     if access_token:
-        payload = decode_token(access_token)
-        if payload and payload.get("type") == "access":
-            expires_in = int(payload["exp"] - datetime.utcnow().timestamp())
-            await blacklist_token(access_token, max(expires_in, 60))
+        tokens_to_blacklist.add(("access", access_token))
+    if bearer_token and bearer_token != access_token:
+        tokens_to_blacklist.add(("access", bearer_token))
+
+    for token_type, token_val in tokens_to_blacklist:
+        payload = decode_token(token_val, expected_type=token_type)
+        if payload:
+            expires_in = int(payload["exp"] - datetime.now(timezone.utc).timestamp())
+            await blacklist_token(token_val, max(expires_in, 60))
 
     await log_audit(db, user_id, "USER_LOGOUT", ip_address=request.client.host)
 
@@ -549,7 +546,7 @@ async def change_password(
     user_id: str = Depends(get_current_user_id),
     db = Depends(get_db)
 ):
-    """Change user password."""
+    """Change user password and invalidate all existing sessions (H2 fix)."""
     users_collection = db.get_collection("users")
     body = await request.json()
     current_password = body.get("current_password")
@@ -564,44 +561,56 @@ async def change_password(
     if not verify_password(current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     new_hashed_password = get_password_hash(new_password)
+
+    # H2 FIX: Store password_changed_at to invalidate all existing tokens
     await users_collection.update_one(
         {"id": user_id},
-        {"$set": {"password_hash": new_hashed_password}}
+        {"$set": {
+            "password_hash": new_hashed_password,
+            "password_changed_at": datetime.now(timezone.utc),
+        }}
     )
     await log_audit(db, user_id, "PASSWORD_CHANGED", ip_address=request.client.host)
-    return {"message": "Password changed successfully"}
+
+    # Issue fresh tokens for this session only
+    access_token = create_access_token(data={"sub": user_id})
+    refresh_token_val = create_refresh_token(data={"sub": user_id})
+
+    response = JSONResponse(content={"message": "Password changed successfully. All other sessions have been logged out."})
+    set_auth_cookies(response, access_token, refresh_token_val)
+    return response
 
 
 @router.post("/refresh")
 async def refresh_token(request: Request):
-    """Refresh access token."""
-    refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
+    """Refresh access token with token rotation (H1 fix)."""
+    old_refresh_token = request.cookies.get("refresh_token")
+    if not old_refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token not found")
 
-    payload = decode_token(refresh_token)
-    if not payload or payload.get("type") != "refresh":
+    # Check if the incoming refresh token has been blacklisted (replay protection)
+    if await is_token_blacklisted(old_refresh_token):
+        raise HTTPException(status_code=401, detail="Refresh token has been revoked")
+
+    payload = decode_token(old_refresh_token, expected_type="refresh")
+    if not payload:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    access_token = create_access_token(data={"sub": user_id})
+    # H1 FIX: Rotate refresh token - issue both new access AND new refresh tokens
+    new_access_token = create_access_token(data={"sub": user_id})
+    new_refresh_token = create_refresh_token(data={"sub": user_id})
+
+    # Blacklist the old refresh token to prevent reuse
+    old_exp = payload.get("exp", 0)
+    expires_in = max(int(old_exp - datetime.now(timezone.utc).timestamp()), 60)
+    await blacklist_token(old_refresh_token, expires_in)
 
     response = JSONResponse(content={"message": "Token refreshed"})
-    # Determine SameSite policy based on configuration
-    same_site = "none" if settings.use_cross_site_cookies else "lax"
-    secure = settings.environment == 'production' or settings.use_cross_site_cookies
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=secure,
-        samesite=same_site,
-        max_age=settings.access_token_expire_minutes * 60,
-        path="/"
-    )
+    set_auth_cookies(response, new_access_token, new_refresh_token)
     return response
 
 
@@ -629,7 +638,7 @@ async def verify_email(
     if user.email_verified:
         raise HTTPException(status_code=400, detail="Email already verified")
 
-    if user.email_verification_expires < datetime.utcnow():
+    if user.email_verification_expires < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=400,
             detail="Verification code expired. Please request a new one."
@@ -802,7 +811,7 @@ async def validate_reset_token(token: str, db = Depends(get_db)):
 
     user = User(**user_doc)
 
-    if user.password_reset_expires < datetime.utcnow():
+    if user.password_reset_expires < datetime.now(timezone.utc):
         return {"valid": False, "message": "Reset token expired"}
 
     return {"valid": True, "message": "Token is valid"}
@@ -824,7 +833,7 @@ async def reset_password(
 
     user = User(**user_doc)
 
-    if user.password_reset_expires < datetime.utcnow():
+    if user.password_reset_expires < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Reset token expired. Please request a new one.")
 
     validate_password_policy(data.new_password)

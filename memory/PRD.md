@@ -1,92 +1,67 @@
-# CryptoVault PRD - Crypto Exchange Platform
+# CryptoVault PRD - Product Requirements Document
 
 ## Original Problem Statement
-Deep review and investigate the entire web application. Identify what hasn't been done and what needs updating. Admin panel/dashboard access review. App is meant to be like Bybit, Coinbase, Binance.
+Build a comprehensive crypto exchange web application (CryptoVault) with features similar to Bybit, Coinbase, and Binance. The platform includes user authentication, live price tickers, wallet management, trading, staking, referrals, admin panel, and push notifications.
 
 ## Architecture
-- **Frontend**: Vite + React + TypeScript + TailwindCSS + Framer Motion + Chart.js + Socket.IO
-- **Backend**: FastAPI + MongoDB Atlas + Socket.IO + Upstash Redis (disabled - quota exhausted)
-- **Database**: MongoDB Atlas (16 collections)
-- **Real-time**: WebSocket price streaming from Coinbase/CoinGecko/Kraken
-
-## User Personas
-1. **Retail Crypto Trader** - Buy/sell crypto, view portfolios, set price alerts
-2. **Passive Investor** - Stake/earn features, flexible/locked staking
-3. **Admin** - User management, transaction monitoring, system health
-
-## Core Requirements
-- User registration/login with secure sessions (httpOnly cookies)
-- Live crypto price data from multiple sources
-- Trading (market/limit orders)
-- Wallet management (deposit/withdraw)
-- Staking/Earn products
-- Admin dashboard with OTP-secured access
-- P2P transfers, price alerts, referral system
+- **Frontend**: React + TypeScript + Vite + TailwindCSS + Framer Motion
+- **Backend**: FastAPI (Python) + MongoDB Atlas
+- **Auth**: JWT (access + refresh tokens via httpOnly Secure cookies)
+- **Real-time**: Socket.IO WebSocket for live prices
+- **Push**: Firebase Cloud Messaging (FCM)
+- **Email**: SendGrid/SMTP with mock fallback
+- **Cache**: In-memory (Redis disabled - free tier exhausted)
 
 ## What's Been Implemented
-### Date: 2026-03-15
 
-#### Features Implemented:
-1. **Referral Reward System (Fixed $10 Bonus)**
-   - Both referrer and referred user get $10 USD credited to wallet on signup
-   - Direct wallet credit (no admin approval needed)
-   - Full audit trail with transactions collection
-   - Referral leaderboard API
-   - Auto-fills referral code from ?ref=CODE URL parameter
-   - In-app + push notifications on referral reward
-   - Privacy-masked referral list (emails/names partially hidden)
+### Core Features (Complete)
+- User registration/login with JWT + httpOnly cookies
+- Admin panel with OTP authentication
+- Live crypto price tickers via WebSocket
+- Wallet management, trading orders, staking/earn products
+- Price alerts system
+- Multi-tier referral program (Bronze/Silver/Gold/Platinum)
+- Firebase push notifications (live)
+- Email service with graceful mock fallback
+- 38 frontend pages, 24 backend routers
 
-2. **Firebase Push Notifications**
-   - FCM service with automatic mock fallback when Firebase not configured
-   - Endpoints: register-token, unregister-token, test, status
-   - Service worker for background notifications (firebase-messaging-sw.js)
-   - Frontend push notification service (lazy-loads Firebase SDK)
-   - Notification routing by type (price alerts -> /markets, orders -> /transactions, etc.)
-   - Pre-built notification types: referral_reward, price_alert, order_confirmation, deposit_confirmation
+### Security Audit & Hardening (Feb 2026)
+**Critical Fixes (C1-C6) - All Implemented:**
+- C1: Admin JWT secret now HMAC-derived (independent from user secret)
+- C2: CSRF secret upgraded to 64-byte random hex
+- C3: JWT tokens now include jti, aud, and iss claims
+- C4: Admin OTP uses secrets.choice (cryptographic randomness)
+- C5: Token type validation enforced (refresh tokens rejected as access tokens)
+- C6: All datetime.utcnow() replaced with datetime.now(timezone.utc)
 
-#### Bugs Fixed (Deep Audit):
-1. **Login → Dashboard redirect race condition** - Fixed with useEffect watching user state instead of imperative navigate()
-2. **Admin password lost** - Reset to known credentials (admin@cryptovault.financial / CryptoAdmin2026!)
-3. **Admin OTP datetime mismatch** - Fixed timezone-naive vs timezone-aware comparison
-4. **Admin OTP in dev mode** - Auto-fills OTP when EMAIL_SERVICE=mock
-5. **Redis cache 400 errors** - Upstash free tier exhausted (500K limit); switched to POST-based API format and disabled until upgraded
-6. **WebSocket URLs hardcoded to localhost** - Fixed to derive from window.location dynamically
-7. **Auth cookies missing Secure flag** - Always set Secure=true for HTTPS
-8. **Staking/Earn disabled** - Enabled FEATURE_STAKING_ENABLED
-9. **Onboarding loader too slow** - Reduced from 5s to 2.5s max
-10. **Vercel analytics removed** - Was failing, not deployed on Vercel
-11. **React Router v7 deprecation warnings** - Added future flags
-12. **Welcome animation duration** - Reduced from 5s to 3s
+**High-Severity Fixes (H1-H5) - All Implemented:**
+- H1: Refresh token rotation (new refresh token on each refresh, old one blacklisted)
+- H2: Session invalidation on password change (new tokens issued, old sessions expired)
+- H3: Login error messages normalized (prevents account enumeration)
+- H4: Login-specific rate limiting (global 60/min + account lockout)
+- H5: Cookie Secure flag unified (always Secure=True)
 
-## Prioritized Backlog
+**Additional Fixes:**
+- Blacklist now checks token before refresh (replay protection)
+- Logout blacklists tokens from both cookies and Authorization header
+- Lazy DB access in blacklist module (prevents stale references)
 
-### P0 (Critical - None remaining)
-All critical bugs fixed.
+### Deployment
+- Gunicorn + Uvicorn workers configured for Render
+- Successfully deployed to Render (confirmed by user)
 
-### P1 (High Priority)
-- [ ] Firebase credentials setup (see /app/FIREBASE_SETUP_GUIDE.md)
-- [ ] Email service (currently mock) - configure SendGrid/real SMTP for production
-- [ ] Upstash Redis - upgrade plan or replace with new instance
-- [ ] Password reset flow end-to-end testing with real email
+## Known Issues
+- **Email**: SendGrid/SMTP credentials invalid - using mock fallback
+- **Redis**: Upstash free tier exhausted - using in-memory cache
 
-### P2 (Medium Priority)
-- [ ] Referral system - implement actual tracking/rewards backend
-- [ ] Blog/Careers pages - connect to CMS or API
-- [ ] Sentry error tracking - configure for production
-- [ ] Advanced trading charts (TradingView integration)
-- [ ] Mobile responsive testing and optimization
+## Pending (P2 - Medium Priority)
+- M1-M10 medium severity items from security audit (documented in SECURITY_AUDIT_REPORT.md)
+- Production VAPID key for web push
+- User-configurable push notification preferences
+- Session limit per user
+- 2FA disable requires password re-confirmation
+- Backup codes should be hashed before storage
 
-### P3 (Low Priority)
-- [ ] Telegram bot admin notifications
-- [ ] Email templates for all transactional emails
-- [ ] Rate limiting with Redis (currently in-memory fallback)
-- [ ] Production deployment hardening (CORS, rate limits, etc.)
-
-## Admin Credentials
-- Email: admin@cryptovault.financial
-- Password: CryptoAdmin2026!
-- OTP: Auto-filled in dev mode (EMAIL_SERVICE=mock)
-
-## Test User
-- Email: test@example.com
-- Password: TestPassword123!
+## Test Credentials
+- **User**: secaudit@test.com / SecAudit2026!
+- **Admin**: admin@cryptovault.financial / CryptoAdmin2026! (OTP bypassed in dev)

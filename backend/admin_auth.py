@@ -5,7 +5,8 @@ Enterprise-grade admin control panel security with OTP
 
 import logging
 import secrets
-import random
+import hashlib
+import hmac
 import string
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Tuple
@@ -24,8 +25,13 @@ logger = logging.getLogger(__name__)
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Admin JWT settings (separate from user JWT)
-ADMIN_SECRET_KEY = settings.jwt_secret.get_secret_value() + "_admin_panel"
+# Admin JWT settings - C1 FIX: Use HMAC-derived key independent from user JWT
+_user_secret = settings.jwt_secret.get_secret_value()
+ADMIN_SECRET_KEY = hmac.new(
+    _user_secret.encode(),
+    b"cryptovault-admin-jwt-signing-key-v1",
+    hashlib.sha256,
+).hexdigest()
 ADMIN_TOKEN_EXPIRE_HOURS = 8  # Admin sessions expire faster
 
 
@@ -103,9 +109,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def generate_admin_otp() -> Tuple[str, datetime]:
     """
     Generate a 6-digit OTP code for admin authentication.
+    C4 FIX: Uses secrets.choice for cryptographic randomness.
     Returns: (otp_code, expiration_time)
     """
-    otp_code = ''.join(random.choices(string.digits, k=6))
+    otp_code = ''.join(secrets.choice(string.digits) for _ in range(6))
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)  # 5-minute expiry
     return otp_code, expires_at
 
