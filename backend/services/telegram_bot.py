@@ -304,6 +304,82 @@ Monitor: <code>/deposit_status {order_id}</code>
         """
         
         return await self.send_message(message)
+
+    async def notify_multi_approval_withdrawal(
+        self,
+        user_id: str,
+        user_email: str,
+        amount: float,
+        currency: str,
+        address: str,
+        withdrawal_id: str,
+        fee: float,
+        required_approvals: int = 2,
+    ) -> bool:
+        """
+        Send enhanced Telegram notification for high-value withdrawals
+        requiring multi-admin approval. Includes amount threshold info
+        and admin action commands.
+        """
+        message = f"""
+🚨 <b>HIGH-VALUE WITHDRAWAL - MULTI-APPROVAL REQUIRED</b> 🚨
+
+👤 <b>User Info:</b>
+━━━━━━━━━━━━━━
+<b>User ID:</b> <code>{user_id}</code>
+<b>Email:</b> {user_email}
+
+💵 <b>Withdrawal Details:</b>
+━━━━━━━━━━━━━━
+<b>Amount:</b> <b>${amount:,.2f}</b> {currency}
+<b>Fee:</b> ${fee:,.2f} {currency}
+<b>Total Deducted:</b> ${amount + fee:,.2f} {currency}
+<b>Destination:</b> <code>{address[:20]}...{address[-10:]}</code>
+<b>Withdrawal ID:</b> <code>{withdrawal_id}</code>
+
+🔐 <b>Approval Status:</b> 0/{required_approvals} approvals
+⚠️ This withdrawal exceeds $5,000 and requires {required_approvals} admin approvals.
+
+📊 <b>Status:</b> ⏳ Pending Multi-Approval
+<b>Time:</b> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+━━━━━━━━━━━━━━
+<b>⚡ Admin Actions:</b>
+<code>/approve_withdrawal {withdrawal_id}</code>
+<code>/reject_withdrawal {withdrawal_id} [reason]</code>
+<code>/info_withdrawal {withdrawal_id}</code>
+
+⚠️ <b>IMPORTANT:</b> Both admins must independently verify the recipient address and user identity before approving.
+        """
+        return await self.send_message(message)
+
+    async def notify_withdrawal_approval_update(
+        self,
+        withdrawal_id: str,
+        admin_email: str,
+        action: str,
+        approval_count: int,
+        required_approvals: int,
+        amount: float,
+        currency: str,
+    ) -> bool:
+        """Notify admins when a withdrawal approval status changes."""
+        action_emoji = "✅" if action == "approved" else "❌"
+        fully_approved = approval_count >= required_approvals
+
+        message = f"""
+{action_emoji} <b>WITHDRAWAL {action.upper()}</b>
+
+<b>Withdrawal ID:</b> <code>{withdrawal_id}</code>
+<b>Admin:</b> {admin_email}
+<b>Amount:</b> ${amount:,.2f} {currency}
+
+🔐 <b>Approval Status:</b> {approval_count}/{required_approvals}
+{"✅ <b>FULLY APPROVED - Ready for processing</b>" if fully_approved else "⏳ Awaiting more approvals"}
+
+<b>Time:</b> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+        """
+        return await self.send_message(message)
     
     async def notify_webhook_received(
         self,
@@ -710,22 +786,78 @@ Created: {user.get('created_at', 'N/A')}
             withdrawal_id = args[0]
             
             try:
-                # Update withdrawal status to processing
-                result = await db.get_collection("withdrawals").update_one(
-                    {"id": withdrawal_id, "status": "pending"},
-                    {
-                        "$set": {
-                            "status": "processing",
-                            "processed_at": datetime.now(timezone.utc)
-                        }
+                withdrawal = await db.get_collection("withdrawals").find_one({"id": withdrawal_id})
+                if not withdrawal:
+                    return f"❌ Withdrawal {withdrawal_id} not found"
+
+                wd_status = withdrawal.get("status", "")
+                if wd_status not in ("pending", "pending_approval"):
+                    return f"❌ Withdrawal {withdrawal_id} is not pending (status: {wd_status})"
+
+                # Multi-approval logic
+                if withdrawal.get("requires_multi_approval"):
+                    approvals = withdrawal.get("approvals", [])
+                    # Use a generic "telegram_admin" ID for Telegram approvals
+                    approval_record = {
+                        "admin_id": "telegram_admin",
+                        "approved_at": datetime.now(timezone.utc).isoformat(),
+                        "source": "telegram_bot",
                     }
-                )
-                
-                if result.modified_count > 0:
-                    return f"✅ Withdrawal {withdrawal_id} approved and set to processing"
-                else:
-                    return f"❌ Withdrawal {withdrawal_id} not found or already processed"
+                    new_count = len(approvals) + 1
+                    required = withdrawal.get("required_approvals", 2)
+                    new_status = "pending" if new_count >= required else "pending_approval"
                     
+                    await db.get_collection("withdrawals").update_one(
+                        {"id": withdrawal_id},
+                        {
+                            "$push": {"approvals": approval_record},
+                            "$set": {
+                                "approval_count": new_count,
+                                "status": new_status,
+                                "updated_at": datetime.now(timezone.utc),
+                            },
+                        },
+                    )
+                    return f"✅ Withdrawal {withdrawal_id} approved ({new_count}/{required}). Status: {new_status}"
+                else:
+                    # Standard approval
+                    await db.get_collection("withdrawals").update_one(
+                        {"id": withdrawal_id},
+                        {"$set": {"status": "processing", "processed_at": datetime.now(timezone.utc)}},
+                    )
+                    return f"✅ Withdrawal {withdrawal_id} approved and set to processing"
+                    
+            except Exception as e:
+                return f"❌ Error: {str(e)}"
+        
+        elif command == "/info_withdrawal":
+            if not args:
+                return "Usage: /info_withdrawal <withdrawal_id>"
+            
+            withdrawal_id = args[0]
+            try:
+                wd = await db.get_collection("withdrawals").find_one({"id": withdrawal_id})
+                if not wd:
+                    return f"❌ Withdrawal {withdrawal_id} not found"
+
+                user = await db.get_collection("users").find_one({"id": wd["user_id"]})
+                user_email = user.get("email", "N/A") if user else "N/A"
+                approvals = wd.get("approvals", [])
+                required = wd.get("required_approvals", 0)
+
+                return f"""
+<b>Withdrawal Details:</b>
+━━━━━━━━━━━━━━
+<b>ID:</b> <code>{wd['id']}</code>
+<b>User:</b> {user_email}
+<b>Amount:</b> ${wd['amount']:,.2f} {wd['currency']}
+<b>Fee:</b> ${wd.get('fee', 0):,.2f}
+<b>Address:</b> <code>{wd['address'][:20]}...</code>
+<b>Status:</b> {wd['status'].upper()}
+<b>Approvals:</b> {len(approvals)}/{required if required else 'N/A'}
+<b>Created:</b> {wd['created_at'].strftime('%Y-%m-%d %H:%M:%S UTC') if hasattr(wd.get('created_at', ''), 'strftime') else str(wd.get('created_at', 'N/A'))}
+<b>Multi-Approval:</b> {'Yes' if wd.get('requires_multi_approval') else 'No'}
+                """
             except Exception as e:
                 return f"❌ Error: {str(e)}"
         
@@ -832,6 +964,7 @@ Created: {user.get('created_at', 'N/A')}
 <b>Withdrawal Management:</b>
 /approve_withdrawal &lt;withdrawal_id&gt;
 /reject_withdrawal &lt;withdrawal_id&gt; [reason]
+/info_withdrawal &lt;withdrawal_id&gt;
 
 <b>Platform:</b>
 /stats - Get platform statistics

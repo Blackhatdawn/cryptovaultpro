@@ -762,10 +762,39 @@ async def create_withdrawal(
         user = await users_collection.find_one({"id": user_id})
         
         if user and user.get("email"):
-            # Note: This would require email service integration
-            logger.info(f"📧 Withdrawal notification email should be sent to {user['email']}")
+            logger.info(f"Withdrawal notification email should be sent to {user['email']}")
     except Exception as e:
         logger.warning(f"Failed to send withdrawal notification email: {e}")
+    
+    # Send Telegram notification to admins
+    try:
+        from services.telegram_bot import telegram_bot
+        users_collection = db.get_collection("users")
+        user = await users_collection.find_one({"id": user_id})
+        user_email = user.get("email", "Unknown") if user else "Unknown"
+
+        if requires_multi_approval:
+            await telegram_bot.notify_multi_approval_withdrawal(
+                user_id=user_id,
+                user_email=user_email,
+                amount=data.amount,
+                currency=data.currency.upper(),
+                address=data.address,
+                withdrawal_id=withdrawal_id,
+                fee=withdrawal_fee,
+                required_approvals=2,
+            )
+        else:
+            await telegram_bot.notify_withdrawal_requested(
+                user_id=user_id,
+                user_email=user_email,
+                amount=data.amount,
+                currency=data.currency,
+                address=data.address,
+                withdrawal_id=withdrawal_id,
+            )
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram withdrawal notification: {e}")
     
     logger.info(f"✅ Withdrawal request created: {withdrawal_id} for ${data.amount}")
     
@@ -865,6 +894,21 @@ async def approve_withdrawal(
         "Withdrawal %s approved by admin %s (%d/%d approvals)",
         withdrawal_id, user_id, new_approval_count, required,
     )
+
+    # Send Telegram notification about approval update
+    try:
+        from services.telegram_bot import telegram_bot
+        await telegram_bot.notify_withdrawal_approval_update(
+            withdrawal_id=withdrawal_id,
+            admin_email=admin_user.get("email", "unknown"),
+            action="approved",
+            approval_count=new_approval_count,
+            required_approvals=required,
+            amount=withdrawal["amount"],
+            currency=withdrawal["currency"],
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram approval notification: {e}")
 
     return {
         "success": True,

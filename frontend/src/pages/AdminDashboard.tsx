@@ -99,7 +99,7 @@ const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'transactions' | 'system' | 'broadcast'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'transactions' | 'withdrawals' | 'system' | 'broadcast'>('overview');
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize] = useState(20);
   
@@ -112,6 +112,12 @@ const AdminDashboard = () => {
   const [broadcastMessage, setBroadcastMessage] = useState({ title: '', message: '', type: 'info' });
   const [walletAdjustModal, setWalletAdjustModal] = useState(false);
   const [walletAdjust, setWalletAdjust] = useState({ currency: 'USD', amount: 0, reason: '' });
+
+  // Withdrawal approvals state
+  const [pendingWithdrawals, setPendingWithdrawals] = useState<any[]>([]);
+  const [withdrawalStats, setWithdrawalStats] = useState<any>(null);
+  const [withdrawalLoading, setWithdrawalLoading] = useState(false);
+  const [withdrawalRefreshInterval, setWithdrawalRefreshInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Load admin data from sessionStorage (AdminRoute already verified auth)
   useEffect(() => {
@@ -297,6 +303,94 @@ const AdminDashboard = () => {
     }
   };
 
+  // ============================================
+  // WITHDRAWAL APPROVAL FUNCTIONS
+  // ============================================
+
+  const fetchPendingWithdrawals = useCallback(async () => {
+    setWithdrawalLoading(true);
+    try {
+      const [wdRes, statsRes] = await Promise.all([
+        adminFetch('/withdrawals/pending?limit=50'),
+        adminFetch('/withdrawals/stats'),
+      ]);
+      if (wdRes.ok) {
+        const data = await wdRes.json();
+        setPendingWithdrawals(data.withdrawals || []);
+      }
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        setWithdrawalStats(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch withdrawals:', err);
+    } finally {
+      setWithdrawalLoading(false);
+    }
+  }, [adminFetch]);
+
+  // Auto-refresh withdrawals every 15 seconds when tab is active
+  useEffect(() => {
+    if (activeTab === 'withdrawals') {
+      fetchPendingWithdrawals();
+      const interval = setInterval(fetchPendingWithdrawals, 15000);
+      setWithdrawalRefreshInterval(interval);
+      return () => clearInterval(interval);
+    } else if (withdrawalRefreshInterval) {
+      clearInterval(withdrawalRefreshInterval);
+      setWithdrawalRefreshInterval(null);
+    }
+  }, [activeTab, fetchPendingWithdrawals]);
+
+  const handleApproveWithdrawal = async (withdrawalId: string) => {
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+      const csrfToken = getCSRFToken();
+      const response = await fetch(`${baseUrl}/api/wallet/withdraw/${withdrawalId}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        },
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(`Withdrawal approved (${data.approvalCount}/${data.requiredApprovals})`);
+        fetchPendingWithdrawals();
+      } else {
+        const err = await response.json();
+        toast.error(err?.error?.message || err?.detail || 'Failed to approve');
+      }
+    } catch (error) {
+      toast.error('Approval failed');
+    }
+  };
+
+  const handleRejectWithdrawal = async (withdrawalId: string) => {
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+      const csrfToken = getCSRFToken();
+      const response = await fetch(`${baseUrl}/api/wallet/withdraw/${withdrawalId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        },
+        credentials: 'include',
+      });
+      if (response.ok) {
+        toast.success('Withdrawal rejected and user refunded');
+        fetchPendingWithdrawals();
+      } else {
+        const err = await response.json();
+        toast.error(err?.error?.message || err?.detail || 'Failed to reject');
+      }
+    } catch (error) {
+      toast.error('Rejection failed');
+    }
+  };
+
   // Handle logout
   const handleLogout = async () => {
     try {
@@ -360,6 +454,7 @@ const AdminDashboard = () => {
             {[
               { id: 'overview', label: 'Overview', icon: BarChart3 },
               { id: 'users', label: 'User Management', icon: Users },
+              { id: 'withdrawals', label: 'Withdrawals', icon: Wallet },
               { id: 'transactions', label: 'Transactions', icon: Activity },
               { id: 'system', label: 'System Health', icon: Server },
               { id: 'broadcast', label: 'Broadcast', icon: MessageSquare },
@@ -731,6 +826,190 @@ const AdminDashboard = () => {
               </Card>
             </div>
           )}
+
+
+          {/* Withdrawal Approvals Tab */}
+          {activeTab === 'withdrawals' && (
+            <div className="space-y-6" data-testid="withdrawal-approvals-tab">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Withdrawal Approvals</h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchPendingWithdrawals}
+                  disabled={withdrawalLoading}
+                  data-testid="refresh-withdrawals-btn"
+                  className="border-amber-500/30 hover:border-amber-500"
+                >
+                  <RefreshCw className={cn("h-4 w-4 mr-2", withdrawalLoading && "animate-spin")} />
+                  Refresh
+                </Button>
+              </div>
+
+              {/* Stats Cards */}
+              {withdrawalStats && (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <Card className="bg-slate-900/50 border-amber-500/10">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-amber-400">{withdrawalStats.pending + withdrawalStats.pending_approval}</div>
+                      <div className="text-xs text-muted-foreground mt-1">Pending</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-slate-900/50 border-red-500/10">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-red-400">{withdrawalStats.high_value_count}</div>
+                      <div className="text-xs text-muted-foreground mt-1">High Value</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-slate-900/50 border-blue-500/10">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-blue-400">{withdrawalStats.processing}</div>
+                      <div className="text-xs text-muted-foreground mt-1">Processing</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-slate-900/50 border-green-500/10 col-span-2">
+                    <CardContent className="p-4 text-center">
+                      <div className="text-2xl font-bold text-green-400">${withdrawalStats.total_pending_amount?.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                      <div className="text-xs text-muted-foreground mt-1">Total Pending Amount</div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Withdrawal List */}
+              {withdrawalLoading && pendingWithdrawals.length === 0 ? (
+                <div className="flex justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : pendingWithdrawals.length === 0 ? (
+                <Card className="bg-slate-900/50 border-slate-700/50">
+                  <CardContent className="p-12 text-center">
+                    <CheckCircle className="h-12 w-12 mx-auto text-green-500 mb-4" />
+                    <h3 className="text-lg font-semibold">All Clear</h3>
+                    <p className="text-muted-foreground mt-1">No pending withdrawal requests</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {pendingWithdrawals.map((wd) => (
+                    <Card
+                      key={wd.id}
+                      data-testid={`withdrawal-card-${wd.id}`}
+                      className={cn(
+                        "bg-slate-900/50 border transition-all",
+                        wd.requires_multi_approval
+                          ? "border-red-500/30 hover:border-red-500/50"
+                          : "border-amber-500/10 hover:border-amber-500/30"
+                      )}
+                    >
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                          {/* Left: Info */}
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-lg font-bold text-white">
+                                ${wd.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                              </span>
+                              <Badge variant="outline" className="text-xs">{wd.currency}</Badge>
+                              {wd.requires_multi_approval && (
+                                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs">
+                                  <AlertTriangle className="h-3 w-3 mr-1" />
+                                  Multi-Approval Required
+                                </Badge>
+                              )}
+                              <Badge
+                                className={cn(
+                                  "text-xs",
+                                  wd.status === 'pending_approval'
+                                    ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                                    : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                                )}
+                              >
+                                {wd.status.replace('_', ' ').toUpperCase()}
+                              </Badge>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">User: </span>
+                                <span className="text-white">{wd.user_email}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Fee: </span>
+                                <span className="text-white">${wd.fee?.toFixed(2)}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-muted-foreground">Address: </span>
+                                <code className="text-xs text-amber-300 bg-slate-800 px-1 py-0.5 rounded">
+                                  {wd.address?.substring(0, 24)}...
+                                </code>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Created: </span>
+                                <span className="text-white">{new Date(wd.created_at).toLocaleString()}</span>
+                              </div>
+                              {wd.requires_multi_approval && (
+                                <div>
+                                  <span className="text-muted-foreground">Approvals: </span>
+                                  <span className={cn(
+                                    "font-bold",
+                                    wd.approval_count >= wd.required_approvals ? "text-green-400" : "text-amber-400"
+                                  )}>
+                                    {wd.approval_count}/{wd.required_approvals}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Show approval history */}
+                            {wd.approvals && wd.approvals.length > 0 && (
+                              <div className="mt-2 pt-2 border-t border-slate-700/50">
+                                <div className="text-xs text-muted-foreground mb-1">Approval History:</div>
+                                {wd.approvals.map((a: any, i: number) => (
+                                  <div key={i} className="text-xs text-green-400 flex items-center gap-1">
+                                    <CheckCircle className="h-3 w-3" />
+                                    {a.admin_email || a.admin_id} - {new Date(a.approved_at).toLocaleString()}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right: Actions */}
+                          <div className="flex gap-2 lg:flex-col">
+                            <Button
+                              size="sm"
+                              data-testid={`approve-withdrawal-${wd.id}`}
+                              onClick={() => handleApproveWithdrawal(wd.id)}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              data-testid={`reject-withdrawal-${wd.id}`}
+                              onClick={() => handleRejectWithdrawal(wd.id)}
+                            >
+                              <XCircle className="h-4 w-4 mr-1" />
+                              Reject
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-xs text-muted-foreground text-center mt-4">
+                <Clock className="h-3 w-3 inline mr-1" />
+                Auto-refreshes every 15 seconds. Telegram notifications sent for all high-value withdrawals.
+              </div>
+            </div>
+          )}
+
 
           {/* Broadcast Tab */}
           {activeTab === 'broadcast' && (

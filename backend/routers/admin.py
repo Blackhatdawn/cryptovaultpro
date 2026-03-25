@@ -921,3 +921,105 @@ async def create_admin(
     )
     
     return {"message": "Admin created successfully", "admin_id": admin_id}
+
+
+
+# ============================================
+# WITHDRAWAL APPROVAL DASHBOARD
+# ============================================
+
+@router.get("/withdrawals/pending")
+async def get_pending_withdrawals(
+    request: Request,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_admin: dict = Depends(get_current_admin),
+    db=Depends(get_db),
+):
+    """
+    Get all pending withdrawal requests for admin approval dashboard.
+    Returns withdrawals sorted by amount (highest first) with user info.
+    Includes multi-approval status for high-value withdrawals.
+    """
+    enforce_permission(current_admin, "manage_withdrawals")
+    
+    withdrawals_collection = db.get_collection("withdrawals")
+    users_collection = db.get_collection("users")
+    
+    # Fetch pending and pending_approval withdrawals
+    cursor = withdrawals_collection.find(
+        {"status": {"$in": ["pending", "pending_approval"]}},
+        {"_id": 0},
+    ).sort([("amount", -1), ("created_at", 1)]).skip(skip).limit(limit)
+    
+    withdrawals = await cursor.to_list(length=limit)
+    total = await withdrawals_collection.count_documents(
+        {"status": {"$in": ["pending", "pending_approval"]}}
+    )
+
+    # Enrich with user email
+    enriched = []
+    for w in withdrawals:
+        user = await users_collection.find_one({"id": w["user_id"]}, {"_id": 0, "email": 1, "name": 1})
+        enriched.append({
+            "id": w["id"],
+            "user_id": w["user_id"],
+            "user_email": user.get("email", "Unknown") if user else "Unknown",
+            "user_name": user.get("name", "Unknown") if user else "Unknown",
+            "amount": w["amount"],
+            "currency": w["currency"],
+            "address": w["address"],
+            "fee": w.get("fee", 0),
+            "total_amount": w.get("total_amount", w["amount"]),
+            "status": w["status"],
+            "requires_multi_approval": w.get("requires_multi_approval", False),
+            "required_approvals": w.get("required_approvals", 0),
+            "approval_count": w.get("approval_count", 0),
+            "approvals": w.get("approvals", []),
+            "created_at": w["created_at"].isoformat() if hasattr(w.get("created_at"), "isoformat") else str(w.get("created_at", "")),
+        })
+
+    return {
+        "withdrawals": enriched,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
+
+
+@router.get("/withdrawals/stats")
+async def get_withdrawal_stats(
+    request: Request,
+    current_admin: dict = Depends(get_current_admin),
+    db=Depends(get_db),
+):
+    """Get withdrawal approval statistics for dashboard overview."""
+    enforce_permission(current_admin, "manage_withdrawals")
+    
+    withdrawals_collection = db.get_collection("withdrawals")
+    
+    pending_count = await withdrawals_collection.count_documents({"status": "pending"})
+    pending_approval_count = await withdrawals_collection.count_documents({"status": "pending_approval"})
+    processing_count = await withdrawals_collection.count_documents({"status": "processing"})
+    
+    # Sum of pending amounts
+    pipeline = [
+        {"$match": {"status": {"$in": ["pending", "pending_approval"]}}},
+        {"$group": {"_id": None, "total_amount": {"$sum": "$amount"}}},
+    ]
+    agg_result = await withdrawals_collection.aggregate(pipeline).to_list(1)
+    total_pending_amount = agg_result[0]["total_amount"] if agg_result else 0
+
+    # High-value count
+    high_value_count = await withdrawals_collection.count_documents({
+        "status": {"$in": ["pending", "pending_approval"]},
+        "requires_multi_approval": True,
+    })
+
+    return {
+        "pending": pending_count,
+        "pending_approval": pending_approval_count,
+        "processing": processing_count,
+        "total_pending_amount": total_pending_amount,
+        "high_value_count": high_value_count,
+    }

@@ -1,382 +1,254 @@
 #!/usr/bin/env python3
 """
-Comprehensive Backend API Testing for CryptoVault Production-Grade Improvements
-
-Tests the following features:
-1. Health endpoints (liveness/readiness probes)
-2. KYC/AML endpoints (authentication required)
-3. Price stream with Redis caching
-4. Email configuration
-5. Domain references
-6. MongoDB indexes
-7. Backend startup without errors
-
-Usage:
-    python backend_test.py
+CryptoVault Backend API Testing Suite
+Tests all endpoints mentioned in the review request for iteration 32
 """
 
-import asyncio
-import json
-import logging
+import requests
 import sys
-import time
+import json
 from datetime import datetime
-from typing import Dict, List, Optional
-
-import httpx
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Backend URL from environment
-BACKEND_URL = "https://secure-trading-api.preview.emergentagent.com"
+from typing import Dict, Any, List, Tuple
 
 class CryptoVaultAPITester:
-    def __init__(self, base_url: str = BACKEND_URL):
+    def __init__(self, base_url: str = "https://secure-trading-api.preview.emergentagent.com"):
         self.base_url = base_url.rstrip('/')
-        self.session = httpx.AsyncClient(timeout=30.0)
+        self.session = requests.Session()
+        self.session.timeout = 30
         self.tests_run = 0
         self.tests_passed = 0
-        self.test_results = []
-        
-    async def __aenter__(self):
-        return self
-        
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.session.aclose()
+        self.test_results: List[Dict[str, Any]] = []
 
-    def log_test_result(self, test_name: str, success: bool, details: Dict = None, error: str = None):
-        """Log test result for reporting."""
+    def log_test(self, name: str, success: bool, details: Dict[str, Any] = None):
+        """Log test result"""
         self.tests_run += 1
         if success:
             self.tests_passed += 1
-            
+        
         result = {
-            "test_name": test_name,
+            "test_name": name,
             "success": success,
             "timestamp": datetime.utcnow().isoformat(),
-            "details": details or {},
-            "error": error
+            "details": details or {}
         }
         self.test_results.append(result)
         
         status = "✅ PASS" if success else "❌ FAIL"
-        logger.info(f"{status} - {test_name}")
-        if error:
-            logger.error(f"   Error: {error}")
-        if details:
-            logger.info(f"   Details: {details}")
+        print(f"{status} - {name}")
+        if details and not success:
+            print(f"    Details: {details}")
 
-    async def test_health_endpoints(self):
-        """Test all health check endpoints."""
+    def test_health_endpoints(self):
+        """Test health check endpoints"""
+        print("\n🔍 Testing Health Endpoints...")
         
-        # Test /health/live (liveness probe)
+        # Test /health/live
         try:
-            response = await self.session.get(f"{self.base_url}/health/live")
-            success = response.status_code == 200 and response.json().get("status") == "ok"
-            self.log_test_result(
+            response = self.session.get(f"{self.base_url}/health/live")
+            success = (response.status_code == 200 and 
+                      response.json().get("status") == "ok")
+            self.log_test(
                 "GET /health/live returns {status: ok} with 200",
                 success,
-                {"status_code": response.status_code, "response": response.json()},
-                None if success else f"Expected 200 with status=ok, got {response.status_code}"
+                {"status_code": response.status_code, "response": response.json()}
             )
         except Exception as e:
-            self.log_test_result("GET /health/live returns {status: ok} with 200", False, error=str(e))
+            self.log_test(
+                "GET /health/live returns {status: ok} with 200",
+                False,
+                {"error": str(e)}
+            )
 
-        # Test /health/ready (readiness probe)
+        # Test /health/ready
         try:
-            response = await self.session.get(f"{self.base_url}/health/ready")
+            response = self.session.get(f"{self.base_url}/health/ready")
             success = response.status_code == 200
-            data = response.json() if success else {}
-            self.log_test_result(
-                "GET /health/ready returns checks for mongodb, redis, price_stream with 200",
-                success,
-                {
-                    "status_code": response.status_code,
-                    "checks": data.get("checks", {}),
-                    "status": data.get("status")
-                },
-                None if success else f"Expected 200, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("GET /health/ready returns readiness info with 200", False, error=str(e))
-
-        # Test /api/health/live
-        try:
-            response = await self.session.get(f"{self.base_url}/api/health/live")
-            success = response.status_code == 200 and response.json().get("status") == "ok"
-            self.log_test_result(
-                "GET /api/health/live returns {status: ok} with 200",
-                success,
-                {"status_code": response.status_code, "response": response.json()},
-                None if success else f"Expected 200 with status=ok, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("GET /api/health/live returns {status: ok} with 200", False, error=str(e))
-
-        # Test /api/health/ready
-        try:
-            response = await self.session.get(f"{self.base_url}/api/health/ready")
-            success = response.status_code == 200
-            data = response.json() if success else {}
-            self.log_test_result(
-                "GET /api/health/ready returns readiness info with 200",
-                success,
-                {
-                    "status_code": response.status_code,
-                    "checks": data.get("checks", {}),
-                    "status": data.get("status")
-                },
-                None if success else f"Expected 200, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("GET /api/health/ready returns readiness info with 200", False, error=str(e))
-
-    async def test_ping_endpoints(self):
-        """Test ping endpoints."""
-        
-        # Test /ping
-        try:
-            response = await self.session.get(f"{self.base_url}/ping")
-            success = response.status_code == 200 and response.json().get("message") == "pong"
-            self.log_test_result(
-                "GET /ping returns pong with 200",
-                success,
-                {"status_code": response.status_code, "response": response.json()},
-                None if success else f"Expected 200 with message=pong, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("GET /ping returns pong with 200", False, error=str(e))
-
-    async def test_kyc_endpoints_unauthenticated(self):
-        """Test KYC endpoints return 401 when unauthenticated."""
-        
-        # Test GET /api/kyc/status
-        try:
-            response = await self.session.get(f"{self.base_url}/api/kyc/status")
-            success = response.status_code == 401
-            self.log_test_result(
-                "GET /api/kyc/status returns 401 when unauthenticated",
-                success,
-                {"status_code": response.status_code},
-                None if success else f"Expected 401, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("GET /api/kyc/status returns 401 when unauthenticated", False, error=str(e))
-
-        # Test POST /api/kyc/documents/upload
-        try:
-            # Create a simple test file
-            files = {"file": ("test.txt", b"test content", "text/plain")}
-            data = {"document_type": "passport"}
-            response = await self.session.post(
-                f"{self.base_url}/api/kyc/documents/upload",
-                files=files,
-                data=data
-            )
-            success = response.status_code == 401
-            self.log_test_result(
-                "POST /api/kyc/documents/upload returns 401 when unauthenticated",
-                success,
-                {"status_code": response.status_code},
-                None if success else f"Expected 401, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("POST /api/kyc/documents/upload returns 401 when unauthenticated", False, error=str(e))
-
-        # Test POST /api/kyc/aml/screen
-        try:
-            response = await self.session.post(
-                f"{self.base_url}/api/kyc/aml/screen",
-                headers={"Content-Type": "application/json"}
-            )
-            success = response.status_code == 401
-            self.log_test_result(
-                "POST /api/kyc/aml/screen returns 401 when unauthenticated",
-                success,
-                {"status_code": response.status_code},
-                None if success else f"Expected 401, got {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("POST /api/kyc/aml/screen returns 401 when unauthenticated", False, error=str(e))
-
-    async def test_backend_startup_and_config(self):
-        """Test backend starts without errors and configuration is correct."""
-        
-        # Test root endpoint to verify backend is running - but it returns HTML, not JSON
-        # So let's test a JSON endpoint instead
-        try:
-            response = await self.session.get(f"{self.base_url}/ping")
-            success = response.status_code == 200
-            data = response.json() if success else {}
+            response_data = response.json()
             
-            # Check if backend is running properly
-            backend_running = success and data.get("message") == "pong"
+            # Check for required checks
+            checks = response_data.get("checks", {})
+            has_mongodb = "mongodb" in checks
+            has_redis = "redis" in checks  
+            has_price_stream = "price_stream" in checks
             
-            self.log_test_result(
-                "Backend starts without errors and all indexes created",
-                backend_running,
-                {
-                    "status_code": response.status_code,
-                    "response": data,
-                    "backend_running": backend_running
-                },
-                None if backend_running else f"Backend not responding properly: {response.status_code}"
-            )
-        except Exception as e:
-            self.log_test_result("Backend starts without errors and all indexes created", False, error=str(e))
-
-    async def test_email_config(self):
-        """Test email configuration is updated to SMTP with mail.spacemail.com."""
-        
-        # We can't directly test email config without admin access, but we can check if the backend
-        # is configured properly by testing an endpoint that would use email
-        try:
-            # Test CSRF endpoint which indicates the backend is properly configured
-            response = await self.session.get(f"{self.base_url}/api/csrf")
-            success = response.status_code == 200
-            data = response.json() if success else {}
+            success = success and has_mongodb and has_redis and has_price_stream
             
-            self.log_test_result(
-                "Email config updated to SMTP with mail.spacemail.com",
+            self.log_test(
+                "GET /health/ready returns mongodb/redis/price_stream checks with 200",
                 success,
                 {
                     "status_code": response.status_code,
-                    "csrf_token_generated": "csrf_token" in data,
-                    "note": "Email config tested indirectly via backend functionality"
-                },
-                None if success else f"Backend configuration issue: {response.status_code}"
+                    "has_mongodb": has_mongodb,
+                    "has_redis": has_redis,
+                    "has_price_stream": has_price_stream,
+                    "checks": list(checks.keys())
+                }
             )
         except Exception as e:
-            self.log_test_result("Email config updated to SMTP with mail.spacemail.com", False, error=str(e))
+            self.log_test(
+                "GET /health/ready returns mongodb/redis/price_stream checks with 200",
+                False,
+                {"error": str(e)}
+            )
 
-    async def test_domain_references(self):
-        """Test domain references updated to cryptovaultpro.finance."""
+    def test_admin_endpoints_unauthorized(self):
+        """Test admin endpoints return 401 without authentication"""
+        print("\n🔍 Testing Admin Endpoints (Unauthorized)...")
+        
+        admin_endpoints = [
+            ("GET", "/api/admin/withdrawals/pending", "GET /api/admin/withdrawals/pending returns 401 without admin auth"),
+            ("GET", "/api/admin/withdrawals/stats", "GET /api/admin/withdrawals/stats returns 401 without admin auth"),
+        ]
+        
+        for method, endpoint, test_name in admin_endpoints:
+            try:
+                if method == "GET":
+                    response = self.session.get(f"{self.base_url}{endpoint}")
+                else:
+                    response = self.session.request(method, f"{self.base_url}{endpoint}")
+                
+                success = response.status_code == 401
+                self.log_test(
+                    test_name,
+                    success,
+                    {"status_code": response.status_code, "endpoint": endpoint}
+                )
+            except Exception as e:
+                self.log_test(
+                    test_name,
+                    False,
+                    {"error": str(e), "endpoint": endpoint}
+                )
+
+    def test_wallet_endpoints_unauthorized(self):
+        """Test wallet withdrawal endpoints return 401 without authentication"""
+        print("\n🔍 Testing Wallet Endpoints (Unauthorized)...")
+        
+        # Use dummy withdrawal ID for testing
+        dummy_withdrawal_id = "test-withdrawal-id-123"
+        
+        wallet_endpoints = [
+            ("POST", f"/api/wallet/withdraw/{dummy_withdrawal_id}/approve", f"POST /api/wallet/withdraw/{{id}}/approve returns 401 without auth"),
+            ("POST", f"/api/wallet/withdraw/{dummy_withdrawal_id}/reject", f"POST /api/wallet/withdraw/{{id}}/reject returns 401 without auth"),
+        ]
+        
+        for method, endpoint, test_name in wallet_endpoints:
+            try:
+                headers = {"Content-Type": "application/json"}
+                response = self.session.request(method, f"{self.base_url}{endpoint}", headers=headers)
+                success = response.status_code == 401
+                self.log_test(
+                    test_name,
+                    success,
+                    {"status_code": response.status_code, "endpoint": endpoint}
+                )
+            except Exception as e:
+                self.log_test(
+                    test_name,
+                    False,
+                    {"error": str(e), "endpoint": endpoint}
+                )
+
+    def test_kyc_endpoints_unauthorized(self):
+        """Test KYC endpoints return 401 without authentication"""
+        print("\n🔍 Testing KYC Endpoints (Unauthorized)...")
         
         try:
-            # Test the root HTML page for domain references
-            response = await self.session.get(f"{self.base_url}/")
+            response = self.session.get(f"{self.base_url}/api/kyc/status")
+            success = response.status_code == 401
+            self.log_test(
+                "GET /api/kyc/status returns 401 without auth",
+                success,
+                {"status_code": response.status_code}
+            )
+        except Exception as e:
+            self.log_test(
+                "GET /api/kyc/status returns 401 without auth",
+                False,
+                {"error": str(e)}
+            )
+
+    def test_backend_startup(self):
+        """Test that backend starts without errors by checking basic connectivity"""
+        print("\n🔍 Testing Backend Startup...")
+        
+        try:
+            # Test basic connectivity with API ping endpoint
+            response = self.session.get(f"{self.base_url}/api/ping")
             success = response.status_code == 200
             
             if success:
-                # Get the HTML content
-                html_content = response.text
-                
-                # Check for domain references in HTML
-                has_new_domain = "cryptovaultpro.finance" in html_content or "CryptoVault Pro" in html_content
-                
-                self.log_test_result(
-                    "Domain references updated to cryptovaultpro.finance in backend config",
-                    has_new_domain,
-                    {
-                        "status_code": response.status_code,
-                        "domain_found": has_new_domain,
-                        "content_type": response.headers.get("content-type", "")
-                    },
-                    None if has_new_domain else "New domain references not found in frontend HTML"
-                )
-            else:
-                self.log_test_result(
-                    "Domain references updated to cryptovaultpro.finance in backend config",
-                    False,
-                    {"status_code": response.status_code},
-                    f"Failed to fetch root page: {response.status_code}"
-                )
-        except Exception as e:
-            self.log_test_result("Domain references updated to cryptovaultpro.finance in backend config", False, error=str(e))
-
-    async def test_price_stream_and_redis(self):
-        """Test price stream functionality and Redis caching."""
-        
-        # Test if price endpoints are working (indicates price stream is functional)
-        try:
-            response = await self.session.get(f"{self.base_url}/api/prices")
-            success = response.status_code == 200
-            data = response.json() if success else {}
+                data = response.json()
+                has_status = data.get("status") == "ok"
+                has_message = data.get("message") == "pong"
+                has_version = "version" in data
+                success = has_status and has_message and has_version
             
-            self.log_test_result(
-                "Price stream with Redis caching operational",
+            self.log_test(
+                "Backend starts without errors - check supervisor logs",
                 success,
-                {
-                    "status_code": response.status_code,
-                    "prices_available": len(data.get("prices", [])) > 0 if success else False,
-                    "note": "Price stream tested via API endpoint"
-                },
-                None if success else f"Price stream not working: {response.status_code}"
+                {"status_code": response.status_code, "connectivity": "ok", "api_response": data if success else None}
             )
         except Exception as e:
-            self.log_test_result("Price stream with Redis caching operational", False, error=str(e))
+            self.log_test(
+                "Backend starts without errors - check supervisor logs",
+                False,
+                {"error": str(e)}
+            )
 
-    async def run_all_tests(self):
-        """Run all test suites."""
-        logger.info("🚀 Starting CryptoVault Backend API Tests")
-        logger.info(f"Testing backend at: {self.base_url}")
-        logger.info("=" * 70)
-        
-        start_time = time.time()
+    def run_all_tests(self):
+        """Run all backend tests"""
+        print("🚀 Starting CryptoVault Backend API Tests")
+        print(f"📍 Testing against: {self.base_url}")
+        print("=" * 60)
         
         # Run test suites
-        await self.test_health_endpoints()
-        await self.test_ping_endpoints()
-        await self.test_kyc_endpoints_unauthenticated()
-        await self.test_backend_startup_and_config()
-        await self.test_email_config()
-        await self.test_domain_references()
-        await self.test_price_stream_and_redis()
-        
-        end_time = time.time()
-        duration = end_time - start_time
+        self.test_health_endpoints()
+        self.test_admin_endpoints_unauthorized()
+        self.test_wallet_endpoints_unauthorized()
+        self.test_kyc_endpoints_unauthorized()
+        self.test_backend_startup()
         
         # Print summary
-        logger.info("=" * 70)
-        logger.info("🏁 TEST SUMMARY")
-        logger.info("=" * 70)
-        logger.info(f"Tests run: {self.tests_run}")
-        logger.info(f"Tests passed: {self.tests_passed}")
-        logger.info(f"Tests failed: {self.tests_run - self.tests_passed}")
-        logger.info(f"Success rate: {(self.tests_passed / self.tests_run * 100):.1f}%")
-        logger.info(f"Duration: {duration:.2f} seconds")
+        print("\n" + "=" * 60)
+        print("📊 TEST SUMMARY")
+        print("=" * 60)
+        print(f"Tests Run: {self.tests_run}")
+        print(f"Tests Passed: {self.tests_passed}")
+        print(f"Tests Failed: {self.tests_run - self.tests_passed}")
+        print(f"Success Rate: {(self.tests_passed / self.tests_run * 100):.1f}%")
         
-        if self.tests_passed == self.tests_run:
-            logger.info("🎉 ALL TESTS PASSED!")
-            return 0
-        else:
-            logger.error("❌ SOME TESTS FAILED!")
-            return 1
-
-    def get_test_results(self) -> Dict:
-        """Get detailed test results for reporting."""
-        return {
+        # Save detailed results
+        results = {
             "summary": {
                 "tests_run": self.tests_run,
                 "tests_passed": self.tests_passed,
                 "tests_failed": self.tests_run - self.tests_passed,
-                "success_rate": (self.tests_passed / self.tests_run * 100) if self.tests_run > 0 else 0,
-                "backend_url": self.base_url
+                "success_rate": round(self.tests_passed / self.tests_run * 100, 1),
+                "timestamp": datetime.utcnow().isoformat(),
+                "base_url": self.base_url
             },
             "test_results": self.test_results
         }
+        
+        with open("/app/test_reports/backend_api_test_results.json", "w") as f:
+            json.dump(results, f, indent=2)
+        
+        print(f"\n📄 Detailed results saved to: /app/test_reports/backend_api_test_results.json")
+        
+        return self.tests_passed == self.tests_run
 
-
-async def main():
-    """Main test runner."""
-    try:
-        async with CryptoVaultAPITester() as tester:
-            exit_code = await tester.run_all_tests()
-            
-            # Save detailed results
-            results = tester.get_test_results()
-            with open("/app/test_reports/backend_api_test_results.json", "w") as f:
-                json.dump(results, f, indent=2)
-            
-            return exit_code
-            
-    except Exception as e:
-        logger.error(f"Test runner failed: {e}")
+def main():
+    """Main test execution"""
+    tester = CryptoVaultAPITester()
+    success = tester.run_all_tests()
+    
+    if success:
+        print("\n🎉 All tests passed!")
+        return 0
+    else:
+        print(f"\n⚠️ {tester.tests_run - tester.tests_passed} test(s) failed")
         return 1
 
-
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    sys.exit(main())
