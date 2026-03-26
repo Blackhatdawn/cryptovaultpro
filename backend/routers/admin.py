@@ -183,7 +183,8 @@ async def admin_login_request_otp(
         try:
             from services.telegram_bot import telegram_bot
             await telegram_bot.notify_admin_otp(admin["email"], otp_code, ip_address)
-        except:
+        except Exception:
+            # A3 FIX: Specific exception handling instead of bare except
             pass  # Telegram is optional
         
     except Exception as e:

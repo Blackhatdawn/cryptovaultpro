@@ -642,6 +642,45 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_production_strict_config(self):
+        """
+        A4 FIX: Strict production-specific configuration validation.
+        Enforce stronger security requirements in production environments.
+        """
+        if self.is_production:
+            # Require explicit production mode enablement
+            if not self.full_production_configuration:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    "⚠️  Production environment detected but full_production_configuration=False. "
+                    "Set FULL_PRODUCTION_CONFIGURATION=true to enable strict security checks."
+                )
+            
+            # In strict production mode, validate MongoDB
+            if self.full_production_configuration:
+                if not self.mongo_url or self.mongo_url == "":
+                    raise ValueError(
+                        "CRITICAL: MONGO_URL is required in production with full_production_configuration=true. "
+                        "Set MONGO_URL environment variable."
+                    )
+                
+                if not self.mongo_url.startswith("mongodb"):
+                    raise ValueError(
+                        "CRITICAL: Invalid MONGO_URL in production. Must be a valid MongoDB connection string."
+                    )
+                
+                # Validate Redis in production
+                if self.use_redis:
+                    if not self.upstash_redis_rest_url and not self.redis_url:
+                        raise ValueError(
+                            "CRITICAL: Redis URL required in production. "
+                            "Set UPSTASH_REDIS_REST_URL or REDIS_URL environment variable."
+                        )
+        
+        return self
+
     @validator("app_url", "public_api_url", "public_ws_url", pre=True)
     def normalize_urls(cls, v):
         """Normalize URLs by removing trailing slashes."""

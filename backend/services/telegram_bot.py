@@ -623,7 +623,8 @@ Check logs and take action if needed.
         
         try:
             db = from_dependencies.get_db()
-        except:
+        except Exception:
+            # A3 FIX: Specific exception handling instead of bare except
             db = None
         
         if not db:

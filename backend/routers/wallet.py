@@ -445,30 +445,27 @@ async def nowpayments_webhook(
             
             logger.info(f"💰 Processing successful payment: ${amount} for user {user_id}")
             
-            # Update or create wallet
-            wallet = await wallets_collection.find_one({"user_id": user_id})
-            if wallet:
-                current_balance = wallet.get("balances", {}).get("USD", 0)
-                new_balance = current_balance + amount
-                await wallets_collection.update_one(
-                    {"user_id": user_id},
-                    {
-                        "$set": {
-                            "balances.USD": new_balance,
-                            "updated_at": datetime.now(timezone.utc)
-                        }
+            # A1 FIX: Use atomic $inc operator for wallet balance updates
+            # Prevents race conditions where two concurrent deposits could result in lost updates
+            # Single atomic operation instead of find-then-set pattern
+            result = await wallets_collection.update_one(
+                {"user_id": user_id},
+                {
+                    "$inc": {"balances.USD": amount},
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                    "$setOnInsert": {
+                        "id": str(uuid.uuid4()),
+                        "balances": {"USD": amount},
+                        "created_at": datetime.now(timezone.utc)
                     }
-                )
-                logger.info(f"✅ Wallet updated: ${current_balance} → ${new_balance}")
-            else:
-                await wallets_collection.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "user_id": user_id,
-                    "balances": {"USD": amount},
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
-                })
+                },
+                upsert=True  # Create wallet if it doesn't exist
+            )
+            
+            if result.upserted_id:
                 logger.info(f"✅ New wallet created with balance: ${amount}")
+            else:
+                logger.info(f"✅ Wallet updated with deposit: +${amount}")
             
             # Create transaction record
             transactions_collection = db.get_collection("transactions")
