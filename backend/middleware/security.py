@@ -299,7 +299,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         "/api/ping",
         "/socket.io/",
         "/api/config",
-        "/api/wallet/webhook",
+        "/api/wallet/webhook/nowpayments",
     ]
     
     # Methods that require CSRF validation

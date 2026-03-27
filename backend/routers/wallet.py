@@ -21,7 +21,7 @@ TODO: Implement cold wallet integration with hardware signing
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
 import logging
@@ -31,6 +31,7 @@ from nowpayments_service import nowpayments_service, PaymentStatus
 from config import settings
 from services.transactions_utils import broadcast_transaction_event
 from email_service import email_service
+from admin_auth import get_current_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -562,51 +563,46 @@ async def nowpayments_webhook(
         raise HTTPException(status_code=500, detail="Webhook processing failed")
 
 
-# ============================================
-# WEBHOOK TESTING ENDPOINT
-# ============================================
-
-@router.post("/webhook/test")
-async def test_webhook_endpoint(request: Request):
-    """
-    Test endpoint to verify webhook is accessible and working.
-    This endpoint accepts any JSON payload and returns diagnostic information.
-    
-    Usage:
-    curl -X POST https://cryptovault-api.onrender.com/api/wallet/webhook/test \
-         -H "Content-Type: application/json" \
-         -d '{"test": "data"}'
-    """
-    try:
-        body = await request.body()
-        content_type = request.headers.get("content-type", "")
-        
-        # Try to parse JSON
+if settings.enable_webhook_test_endpoint:
+    @router.post("/webhook/test")
+    async def test_webhook_endpoint(
+        request: Request,
+        current_admin: dict = Depends(get_current_admin),
+    ):
+        """
+        Diagnostic endpoint to verify webhook routing during setup.
+        Disabled by default; when enabled it requires admin authentication.
+        """
         try:
-            import json
-            payload = json.loads(body) if body else {}
-        except json.JSONDecodeError:
-            payload = {"error": "Invalid JSON"}
-        
-        return {
-            "status": "success",
-            "message": "Webhook endpoint is accessible and working",
-            "received": {
-                "content_type": content_type,
-                "body_length": len(body),
-                "payload": payload,
-                "headers": dict(request.headers),
-                "client_host": request.client.host if request.client else "unknown"
-            },
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Test webhook error: {str(e)}")
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+            body = await request.body()
+            content_type = request.headers.get("content-type", "")
+
+            # Try to parse JSON
+            try:
+                import json
+                payload = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                payload = {"error": "Invalid JSON"}
+
+            return {
+                "status": "success",
+                "message": "Webhook diagnostic endpoint reached",
+                "received": {
+                    "content_type": content_type,
+                    "body_length": len(body),
+                    "payload": payload,
+                    "client_host": request.client.host if request.client else "unknown",
+                    "admin_id": current_admin.get("id"),
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        except Exception as e:
+            logger.error(f"Test webhook error: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
 
 # ============================================

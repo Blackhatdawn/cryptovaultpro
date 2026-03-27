@@ -317,6 +317,14 @@ class Settings(BaseSettings):
     feature_staking_enabled: bool = Field(default=False, description="Enable staking/earn endpoints")
 
     # ============================================
+    # DIAGNOSTIC ENDPOINTS
+    # ============================================
+    enable_webhook_test_endpoint: bool = Field(
+        default=False,
+        description="Enable the diagnostic /api/wallet/webhook/test endpoint (admin-only). Should remain false in production.",
+    )
+
+    # ============================================
     # FIREBASE CONFIGURATION
     # ============================================
     firebase_credentials_path: Optional[str] = Field(

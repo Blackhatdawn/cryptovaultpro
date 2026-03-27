@@ -122,7 +122,7 @@ class SocketIOManager:
                     return
                 
                 # Validate JWT token
-                payload = decode_token(token)
+                payload = decode_token(token, expected_type="access")
                 
                 if not payload:
                     logger.warning(f"❌ Invalid token for Socket.IO auth (sid: {sid})")

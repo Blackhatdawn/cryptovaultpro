@@ -13,7 +13,7 @@ import random
 import secrets
 import string
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Tuple, Optional, Dict, Any, Callable, Awaitable
 import logging
 from email.message import EmailMessage
@@ -215,7 +215,7 @@ class EmailService:
         name: str,
         code: str,
         token: str,
-        app_url: str
+        verification_url: str,
     ) -> Tuple[str, str, str]:
         """
         Generate verification email content with 6-digit OTP code.
@@ -223,7 +223,9 @@ class EmailService:
         """
         subject = "🔐 CryptoVault - Verify Your Email"
         
-        verify_link = f"{app_url}/verify?token={token}"
+        base = (verification_url or "").rstrip("/")
+        separator = "&" if "?" in base else "?"
+        verify_link = f"{base}{separator}token={token}"
         
         html_content = f"""
 <!DOCTYPE html>
@@ -257,7 +259,7 @@ class EmailService:
                             </div>
                             
                             <p style="margin: 24px 0 0; color: #ff6b6b; font-size: 14px; text-align: center;">
-                                ⏰ This code expires in <strong>5 minutes</strong>
+                                ⏰ This code expires in <strong>24 hours</strong>
                             </p>
                             
                             <div style="text-align: center; margin: 24px 0;">
@@ -291,7 +293,7 @@ Your verification code is: {code}
 
 Or verify using this link: {verify_link}
 
-This code expires in 5 minutes.
+This code expires in 24 hours.
 
 If you didn't request this code, please ignore this email.
 

@@ -1,16 +1,17 @@
 """
 File Upload Router - KYC Document Management
 Handles file uploads for KYC verification using GridFS
+
+NOTE: This router is deprecated in favor of the S3-based KYC flow in `routers/kyc_aml.py`
+and is no longer mounted by `server.py` for production deployments.
 """
 import logging
-from typing import Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status, Request
 from fastapi.responses import StreamingResponse
 
 from dependencies import get_current_user_id, get_db
-from database import get_database
 from services.gridfs_storage import GridFSStorageService
-from services.telegram_bot import telegram_bot
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +23,16 @@ ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.pdf', '.webp'}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
-async def get_current_user(user_id: str = Depends(get_current_user_id)) -> dict:
+async def get_current_user(
+    user_id: str = Depends(get_current_user_id),
+    db=Depends(get_db),
+) -> dict:
     """Get current user from database"""
-    db = get_db()
-    user = await db.users.find_one({"id": user_id})
+    users_collection = db.get_collection("users")
+    user = await users_collection.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
-
-
-# Allowed file types and sizes
-ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.pdf', '.webp'}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def validate_file(file: UploadFile) -> None:
@@ -55,7 +54,8 @@ async def upload_kyc_document(
     request: Request,
     file: UploadFile = File(...),
     document_type: str = Form(...),  # id_front, id_back, selfie, proof_of_address
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """
     Upload KYC document for verification.
@@ -66,8 +66,6 @@ async def upload_kyc_document(
     - selfie: Selfie holding ID
     - proof_of_address: Utility bill or bank statement
     """
-    db = get_db()
-    
     # Validate document type
     valid_types = ['id_front', 'id_back', 'selfie', 'proof_of_address']
     if document_type not in valid_types:
@@ -109,10 +107,11 @@ async def upload_kyc_document(
             'type': document_type,
             'file_id': file_id,
             'filename': file.filename,
-            'uploaded_at': file_data.__class__.__name__  # Placeholder, will be set in DB
+            'uploaded_at': datetime.now(timezone.utc).isoformat(),
         }
-        
-        await db.users.update_one(
+
+        users_collection = db.get_collection("users")
+        await users_collection.update_one(
             {"id": current_user['id']},
             {"$push": {"kyc_docs": doc_entry}}
         )
@@ -139,11 +138,10 @@ async def upload_kyc_document(
 @router.get("/download/{file_id}", summary="Download File")
 async def download_file(
     file_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """Download a file by ID (user can only download their own files)"""
-    db = get_db()
-    
     try:
         # Get GridFS service
         gridfs_service = GridFSStorageService(db)
@@ -154,7 +152,8 @@ async def download_file(
         # Check if user owns this file
         if metadata.get('user_id') != current_user['id']:
             # Check if user is admin
-            admin = await db.admins.find_one({"id": current_user['id']})
+            admins_collection = db.get_collection("admins")
+            admin = await admins_collection.find_one({"id": current_user['id']})
             if not admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -183,14 +182,14 @@ async def download_file(
 @router.delete("/delete/{file_id}", summary="Delete File")
 async def delete_file(
     file_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """Delete a file by ID (user can only delete their own files)"""
-    db = get_db()
-    
     try:
         # Verify ownership
-        user = await db.users.find_one({"id": current_user['id']})
+        users_collection = db.get_collection("users")
+        user = await users_collection.find_one({"id": current_user['id']})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -209,7 +208,7 @@ async def delete_file(
         await gridfs_service.delete_file(file_id)
         
         # Remove from user's KYC documents
-        await db.users.update_one(
+        await users_collection.update_one(
             {"id": current_user['id']},
             {"$pull": {"kyc_docs": {"file_id": file_id}}}
         )
@@ -233,12 +232,12 @@ async def delete_file(
 
 @router.get("/user/documents", summary="Get User's KYC Documents")
 async def get_user_documents(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """Get list of current user's uploaded KYC documents"""
-    db = get_db()
-    
-    user = await db.users.find_one({"id": current_user['id']})
+    users_collection = db.get_collection("users")
+    user = await users_collection.find_one({"id": current_user['id']})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     

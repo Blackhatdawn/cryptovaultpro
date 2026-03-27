@@ -110,6 +110,7 @@ class APIClient {
   private client: AxiosInstance;
   private isRefreshing = false;
   private csrfToken: string | null = null;
+  private isRefreshingCsrf = false;
   private failedQueue: Array<{
     resolve: (value?: any) => void;
     reject: (reason?: any) => void;
@@ -123,11 +124,18 @@ class APIClient {
 
   /**
    * Initialize CSRF token on app load
-   * Fetches from /csrf endpoint which sets it as a cookie
+   * Fetches from /api/csrf (or /csrf via rewrites) which sets a cookie and returns the token in the JSON body.
+   *
+   * Split-host note (Vercel frontend + Render backend):
+   * - Backend can keep the CSRF cookie HttpOnly (safer).
+   * - Frontend stores the returned token in-memory and forwards it as X-CSRF-Token.
    */
   private async initializeCSRFToken(): Promise<void> {
     try {
-      await this.client.get('/csrf');
+      const response = await this.client.get<{ csrf_token?: string }>('/api/csrf');
+      if (response.data?.csrf_token) {
+        this.csrfToken = response.data.csrf_token;
+      }
       if (import.meta.env.DEV) {
         console.log('[API Client] CSRF token initialized');
       }
@@ -136,6 +144,19 @@ class APIClient {
       if (import.meta.env.DEV) {
         console.warn('[API Client] Failed to initialize CSRF token:', error);
       }
+    }
+  }
+
+  private async refreshCSRFToken(): Promise<void> {
+    if (this.isRefreshingCsrf) return;
+    this.isRefreshingCsrf = true;
+    try {
+      const response = await this.client.get<{ csrf_token?: string }>('/api/csrf');
+      if (response.data?.csrf_token) {
+        this.csrfToken = response.data.csrf_token;
+      }
+    } finally {
+      this.isRefreshingCsrf = false;
     }
   }
 
@@ -174,8 +195,8 @@ class APIClient {
         // Add CSRF token header for mutating requests (POST, PUT, PATCH, DELETE)
         const mutatingMethods = ['post', 'put', 'patch', 'delete'];
         if (config.method && mutatingMethods.includes(config.method.toLowerCase())) {
-          // Get CSRF token from cookie
-          const csrfToken = this.getCSRFTokenFromCookie();
+          // Prefer in-memory CSRF token (works with HttpOnly cookies); fallback to cookie if readable
+          const csrfToken = this.csrfToken || this.getCSRFTokenFromCookie();
           if (csrfToken) {
             config.headers['X-CSRF-Token'] = csrfToken;
           }
@@ -194,6 +215,22 @@ class APIClient {
       (response) => response,
       async (error: AxiosError<APIError>) => {
         const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+
+        // If CSRF fails, refresh CSRF token once and retry the request.
+        if (
+          error.response?.status === 403 &&
+          !originalRequest._retry &&
+          (error.response?.data as any)?.error?.code &&
+          ['CSRF_TOKEN_MISSING', 'CSRF_TOKEN_INVALID'].includes((error.response?.data as any).error.code)
+        ) {
+          originalRequest._retry = true;
+          try {
+            await this.refreshCSRFToken();
+            return this.client(originalRequest);
+          } catch {
+            // Fall through to normal error handling
+          }
+        }
 
         // If error is 401 and we haven't retried yet
         if (error.response?.status === 401 && !originalRequest._retry) {

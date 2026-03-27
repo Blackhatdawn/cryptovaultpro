@@ -29,7 +29,7 @@ def test_verification_template_contains_code_and_token(svc: EmailService):
         name="Alice",
         code="123456",
         token="abc123",
-        app_url="https://example.com",
+        verification_url="https://example.com/verify",
     )
 
     assert "Verify" in subject

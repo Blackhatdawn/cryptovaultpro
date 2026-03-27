@@ -23,7 +23,7 @@ from config import settings, validate_startup_environment, get_settings
 from database import DatabaseConnection
 
 # Routers
-from routers import auth, portfolio, trading, crypto, admin, wallet, alerts, transactions, prices, websocket, transfers, users, notifications, monitoring, config, files, referrals, earn, contact, push
+from routers import auth, portfolio, trading, crypto, admin, wallet, alerts, transactions, prices, websocket, transfers, users, notifications, monitoring, config, referrals, earn, contact, push
 from routers.health import router as health_router
 from routers.kyc_aml import router as kyc_aml_router
 
@@ -756,7 +756,6 @@ app.include_router(transactions.router, prefix="/api", tags=["legacy"])
 app.include_router(transfers.router, prefix="/api", tags=["legacy"])
 app.include_router(users.router, prefix="/api", tags=["legacy"])
 app.include_router(config.router, prefix="/api")
-app.include_router(files.router, prefix="/api", tags=["files"])  # KYC file uploads
 app.include_router(referrals.router, prefix="/api")
 app.include_router(earn.router, prefix="/api")
 app.include_router(contact.router, prefix="/api")
@@ -1003,4 +1002,3 @@ logger.info("✅ Socket.IO mounted at /socket.io/")
 
 # CRITICAL: Override `app` so uvicorn server:app loads the Socket.IO-wrapped version
 app = socket_app
-

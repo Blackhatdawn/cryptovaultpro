@@ -218,12 +218,11 @@ async def signup(
     async def send_verification_email_background():
         """Background task to send verification email without blocking signup response"""
         try:
-            app_url = settings.app_url
             subject, html_content, text_content = email_service.get_verification_email(
                 name=user.name,
                 code=verification_code,
                 token=verification_token,
-                app_url=app_url
+                verification_url=settings.email_verification_url,
             )
             
             email_sent = await email_service.send_email(
@@ -882,7 +881,7 @@ async def resend_verification(
         name=user.name,
         code=verification_code,
         token=verification_token,
-        app_url=settings.app_url
+        verification_url=settings.email_verification_url,
     )
 
     await email_service.send_email(
