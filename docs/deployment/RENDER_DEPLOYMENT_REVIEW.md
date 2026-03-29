@@ -11,7 +11,7 @@ Comprehensive review of backend configuration for Render deployment. Found **1 c
 
 ### 1. Invalid SendGrid API Key
 **Status:** CRITICAL - Will cause deployment failures for email features
-**Current Key:** `SG.ciw-4US9TqqjjHZ5roxIjw...` returns **401 Unauthorized**
+**Current Key:** `<redacted>` returns **401 Unauthorized**
 **Impact:** Email verification, password reset, and notification emails will fail
 
 **Fix Options:**

@@ -3,9 +3,9 @@
   "version": 2,
   "name": "cryptovault",
   "framework": "vite",
-  "buildCommand": "pnpm build:prod",
-  "outputDirectory": "dist",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "cd frontend && npx -y pnpm@9.0.0 run build:prod",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "cd frontend && npx -y pnpm@9.0.0 install --frozen-lockfile",
   "cleanUrls": true,
   "trailingSlash": false,
   "env": {

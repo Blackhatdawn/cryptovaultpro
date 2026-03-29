@@ -26,6 +26,21 @@ from pydantic import Field, validator, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def strip_wrapping_quotes(value: str) -> str:
+    """
+    Render/CI dashboards often store env var values verbatim. If a user pastes dotenv-style
+    values with wrapping quotes (e.g. '"https://x"' or '\'["https://x"]\''), those quotes
+    become part of the value and can break validation/parsing. Strip only a single matching
+    pair of wrapping quotes.
+    """
+    if not isinstance(value, str):
+        return value
+    v = value.strip()
+    if len(v) >= 2 and ((v[0] == v[-1]) and v[0] in ("'", '"')):
+        return v[1:-1].strip()
+    return v
+
+
 def normalize_url(url: str) -> str:
     """
     Normalize URL by removing trailing slashes and ensuring proper format.
@@ -38,6 +53,8 @@ def normalize_url(url: str) -> str:
     """
     if not url:
         return url
+
+    url = strip_wrapping_quotes(url)
     
     # Remove trailing slashes but keep single slash for root
     if url != "/" and url.endswith("/"):
@@ -58,6 +75,8 @@ def normalize_socket_io_path(path: str) -> str:
     """
     if not path:
         return "/socket.io/"
+
+    path = strip_wrapping_quotes(path)
     
     # Ensure path starts with /
     if not path.startswith("/"):
@@ -420,18 +439,19 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return v
         if isinstance(v, str):
-            if not v.strip():
+            raw = strip_wrapping_quotes(v)
+            if not raw.strip():
                 return []
             # Handle JSON-encoded list
-            if v.startswith("[") and v.endswith("]"):
+            if raw.startswith("[") and raw.endswith("]"):
                 try:
                     import json
-                    return json.loads(v)
+                    return json.loads(raw)
                 except json.JSONDecodeError:
                     # Fallback for malformed JSON, treat as string
                     pass
             # Handle comma-separated string
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            return [origin.strip() for origin in raw.split(",") if origin.strip()]
         # If it's not a recognized type, return an empty list to prevent errors
         return []
 
@@ -693,6 +713,7 @@ class Settings(BaseSettings):
     def normalize_urls(cls, v):
         """Normalize URLs by removing trailing slashes."""
         if isinstance(v, str) and v:
+            v = strip_wrapping_quotes(v)
             return normalize_url(v)
         return v
 
@@ -700,6 +721,7 @@ class Settings(BaseSettings):
     def normalize_socket_path(cls, v):
         """Normalize Socket.IO path to ensure proper format."""
         if isinstance(v, str):
+            v = strip_wrapping_quotes(v)
             return normalize_socket_io_path(v)
         return v
 
@@ -747,7 +769,9 @@ class Settings(BaseSettings):
 
     def is_sentry_available(self) -> bool:
         """Check if Sentry is configured with a valid DSN."""
-        return bool(self.sentry_dsn and str(self.sentry_dsn).strip())
+        dsn = strip_wrapping_quotes(str(self.sentry_dsn).strip()) if self.sentry_dsn else ""
+        # Sentry Python SDK expects a URL-like DSN (typically https://...@.../id).
+        return bool(dsn and dsn.startswith(("http://", "https://")))
 
     @property
     def rate_limit_requests_per_minute(self) -> int:

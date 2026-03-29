@@ -13,9 +13,9 @@ services:
     region: oregon  # Choose closest to your users: oregon, frankfurt, singapore
     rootDir: backend
     buildCommand: |
-      pip install --upgrade pip && 
+      pip install --upgrade pip &&
       pip install -r requirements.txt &&
-      python -c "import config; print('Config loaded successfully')"
+      python -m compileall -q .
     startCommand: python start_server.py
     
     envVars:

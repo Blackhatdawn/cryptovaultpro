@@ -1,42 +1,33 @@
-# Frontend Dockerfile - Production Optimized
-FROM node:20-alpine as builder
+# Frontend Dockerfile - Production Optimized (repo root wrapper)
+FROM node:20-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY frontend/package.json frontend/yarn.lock ./
+# Install pnpm (lockfileVersion: 9.x)
+RUN npm install -g pnpm@9
 
-# Install dependencies
-RUN yarn install --frozen-lockfile --production=false
+# Copy package files first for better caching
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
-# Copy source code
+# Install deps (need devDependencies for Vite build)
+RUN NODE_ENV=development pnpm install --frozen-lockfile
+
+# Copy source and build
 COPY frontend/ ./
-
-# Build application
-ENV NODE_ENV=production
-RUN yarn build
+RUN NODE_ENV=development pnpm run build:prod
 
 # Production stage with nginx
 FROM nginx:alpine
 
-# Security: Remove default nginx user and create custom
-RUN deluser nginx && \
-    addgroup -g 1000 -S appuser && \
-    adduser -u 1000 -S appuser -G appuser
+# Copy nginx configuration (server block)
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy built assets
-COPY --from=builder --chown=appuser:appuser /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY frontend/nginx.conf /etc/nginx/nginx.conf
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
-
-# Expose port
 EXPOSE 80
 
-# Run nginx
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost/health.html || exit 1
+
 CMD ["nginx", "-g", "daemon off;"]

@@ -230,8 +230,8 @@ VITE_API_BASE_URL=https://cryptovault-api.onrender.com
 **Verify Environment Variables:**
 ```bash
 PUBLIC_API_URL=https://cryptovault-api.onrender.com
-NOWPAYMENTS_API_KEY=ZKDVT1B-4WTMVAZ-KZ7E38G-GPNE8Q7
-NOWPAYMENTS_IPN_SECRET=bEEgqlb1q+TF6ygQfNJ+fUJyWvARDJwp
+NOWPAYMENTS_API_KEY=<your-nowpayments-api-key>
+NOWPAYMENTS_IPN_SECRET=<your-nowpayments-ipn-secret>
 NOWPAYMENTS_SANDBOX=false
 ```
 

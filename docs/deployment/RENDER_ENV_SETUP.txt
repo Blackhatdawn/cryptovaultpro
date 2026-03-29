@@ -43,14 +43,14 @@ Key: HOST
 Value: 0.0.0.0
 
 Key: PORT
-Value: 8000
+Value: (Do not set manually on Render. Render injects $PORT automatically.)
 
 -----------------------------------------------------------------
 DATABASE (MongoDB Atlas)
 -----------------------------------------------------------------
 
 Key: MONGO_URL
-Value: mongodb+srv://team_db_user:mWPe3V6ZhoNNEWUk@cryptovaultcluster.vobw2w8.mongodb.net/?appName=CryptoVaultCluster
+Value: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<db>?retryWrites=true&w=majority
 
 Key: DB_NAME
 Value: cryptovault
@@ -69,10 +69,10 @@ Key: USE_REDIS
 Value: true
 
 Key: UPSTASH_REDIS_REST_URL
-Value: https://emerging-sponge-14455.upstash.io
+Value: https://<your-redis>.upstash.io
 
 Key: UPSTASH_REDIS_REST_TOKEN
-Value: ATh3AAIncDE5OTMzNjFiM2M4NzA0NmEzOWQwOWE2MjgwODczMDNlM3AxMTQ0NTU
+Value: <your-upstash-token>
 
 Key: REDIS_PREFIX
 Value: cryptovault:
@@ -82,7 +82,7 @@ SECURITY & AUTHENTICATION
 -----------------------------------------------------------------
 
 Key: JWT_SECRET
-Value: jmZgXmsOEx10hwWOIE6EvhCft56jew6PVSiSweq-JQI
+Value: <generate-a-strong-32+char-secret>
 
 Key: JWT_ALGORITHM
 Value: HS256
@@ -94,7 +94,7 @@ Key: REFRESH_TOKEN_EXPIRE_DAYS
 Value: 7
 
 Key: CSRF_SECRET
-Value: 9f5cb48d-aa6b-4923-a760-ce8065e4238d
+Value: <generate-a-strong-32+char-secret>
 
 Key: USE_CROSS_SITE_COOKIES
 Value: true
@@ -111,10 +111,13 @@ EMAIL (SendGrid)
 -----------------------------------------------------------------
 
 Key: EMAIL_SERVICE
-Value: sendgrid
+Value: resend
 
 Key: SENDGRID_API_KEY
-Value: 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
+Value: (Only if EMAIL_SERVICE=sendgrid) SG.<your-key>
+
+Key: RESEND_API_KEY
+Value: (Only if EMAIL_SERVICE=resend) re_<your-key>
 
 Key: EMAIL_FROM
 Value: teams@cryptovault.financial
@@ -130,7 +133,7 @@ CRYPTO SERVICES
 -----------------------------------------------------------------
 
 Key: COINCAP_API_KEY
-Value: 68aa5a01aa84e5704a10f5d6f730dadd9381901161e06d07085fcca8587f41e3
+Value: <your-coincap-api-key>
 
 Key: COINCAP_RATE_LIMIT
 Value: 50
@@ -143,10 +146,10 @@ PAYMENT PROCESSING (NowPayments)
 -----------------------------------------------------------------
 
 Key: NOWPAYMENTS_API_KEY
-Value: ZKDVT1B-4WTMVAZ-KZ7E38G-GPNE8Q7
+Value: <your-nowpayments-api-key>
 
 Key: NOWPAYMENTS_IPN_SECRET
-Value: bEEgqlb1q+TF6ygQfNJ+fUJyWvARDJwp
+Value: <your-nowpayments-ipn-secret>
 
 Key: NOWPAYMENTS_SANDBOX
 Value: false
@@ -163,7 +166,7 @@ ERROR TRACKING (Sentry)
 -----------------------------------------------------------------
 
 Key: SENTRY_DSN
-Value: https://bcb7c3a730f99e6fa758cd3e25edc327@o4510716875505664.ingest.us.sentry.io/4510716879503360
+Value: <your-sentry-dsn>
 
 Key: SENTRY_TRACES_SAMPLE_RATE
 Value: 0.1
@@ -278,35 +281,35 @@ APP_VERSION=2.0.0
 DEBUG=false
 APP_URL=https://www.cryptovault.financial
 HOST=0.0.0.0
-PORT=8000
-MONGO_URL=mongodb+srv://team_db_user:mWPe3V6ZhoNNEWUk@cryptovaultcluster.vobw2w8.mongodb.net/?appName=CryptoVaultCluster
+# PORT is injected by Render automatically; do not set it manually.
+MONGO_URL=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/<db>?retryWrites=true&w=majority
 DB_NAME=cryptovault
 MONGO_MAX_POOL_SIZE=10
 MONGO_TIMEOUT_MS=5000
 USE_REDIS=true
-UPSTASH_REDIS_REST_URL=https://emerging-sponge-14455.upstash.io
-UPSTASH_REDIS_REST_TOKEN=ATh3AAIncDE5OTMzNjFiM2M4NzA0NmEzOWQwOWE2MjgwODczMDNlM3AxMTQ0NTU
+UPSTASH_REDIS_REST_URL=https://<your-redis>.upstash.io
+UPSTASH_REDIS_REST_TOKEN=<your-upstash-token>
 REDIS_PREFIX=cryptovault:
-JWT_SECRET=jmZgXmsOEx10hwWOIE6EvhCft56jew6PVSiSweq-JQI
+JWT_SECRET=<generate-a-strong-32+char-secret>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
-CSRF_SECRET=backend-migration-11
+CSRF_SECRET=<generate-a-strong-32+char-secret>
 USE_CROSS_SITE_COOKIES=true
 CORS_ORIGINS=https://www.cryptovault.financial,http://localhost:3000,http://127.0.0.1:3000
-EMAIL_SERVICE=sendgrid
-SENDGRID_API_KEY=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
+EMAIL_SERVICE=resend
+RESEND_API_KEY=re_<your-key>
 EMAIL_FROM=teams@cryptovault.financial
 EMAIL_FROM_NAME=CryptoVault Financial
 EMAIL_VERIFICATION_URL=https://cryptovault.financial/verify
-COINCAP_API_KEY=68aa5a01aa84e5704a10f5d6f730dadd9381901161e06d07085fcca8587f41e3
+COINCAP_API_KEY=<your-coincap-api-key>
 COINCAP_RATE_LIMIT=50
 USE_MOCK_PRICES=false
-NOWPAYMENTS_API_KEY=ZKDVT1B-4WTMVAZ-KZ7E38G-GPNE8Q7
-NOWPAYMENTS_IPN_SECRET=bEEgqlb1q+TF6ygQfNJ+fUJyWvARDJwp
+NOWPAYMENTS_API_KEY=<your-nowpayments-api-key>
+NOWPAYMENTS_IPN_SECRET=<your-nowpayments-ipn-secret>
 NOWPAYMENTS_SANDBOX=false
 FIREBASE_CREDENTIALS_PATH=/app/backend/firebase-credentials.json
-SENTRY_DSN=https://bcb7c3a730f99e6fa758cd3e25edc327@o4510716875505664.ingest.us.sentry.io/4510716879503360
+SENTRY_DSN=<your-sentry-dsn>
 SENTRY_TRACES_SAMPLE_RATE=0.1
 SENTRY_PROFILES_SAMPLE_RATE=0.1
 RATE_LIMIT_PER_MINUTE=60

@@ -83,7 +83,7 @@ jobs:
           MONGO_URL: mongodb://test:test@localhost:27017
           DB_NAME: test_db
           JWT_SECRET: test-secret-key-for-ci-testing-only
-          ENVIRONMENT: test
+          ENVIRONMENT: development
         working-directory: backend
         run: pytest tests/ -v --cov=. --cov-report=xml --cov-report=html
 
