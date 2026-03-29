@@ -8,7 +8,7 @@ import asyncio
 from typing import Callable, Optional, Any
 from enum import Enum
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
