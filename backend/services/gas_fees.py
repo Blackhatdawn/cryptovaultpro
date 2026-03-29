@@ -12,7 +12,7 @@ Features:
 
 import logging
 from typing import Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 
 from config import settings
