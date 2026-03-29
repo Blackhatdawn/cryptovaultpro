@@ -936,7 +936,19 @@ def validate_startup_environment() -> dict:
         cors_origins = settings.get_cors_origins_list()
         app_origin = settings.app_url.rstrip("/") if settings.app_url else ""
         if app_origin and app_origin not in cors_origins:
-            strict_missing_vars.append("cors_origins must include APP_URL origin")
+            # Allow www/non-www variants to reduce footguns when APP_URL/CORS_ORIGINS differ only by "www.".
+            def _www_variants(origin: str) -> list[str]:
+                if "://" not in origin:
+                    return []
+                scheme, rest = origin.split("://", 1)
+                rest = rest.rstrip("/")
+                if rest.startswith("www."):
+                    return [f"{scheme}://{rest[4:]}"]
+                return [f"{scheme}://www.{rest}"]
+
+            variants = _www_variants(app_origin)
+            if not any(v in cors_origins for v in variants):
+                strict_missing_vars.append("cors_origins must include APP_URL origin")
 
         if settings.public_api_url and not str(settings.public_api_url).startswith(("https://", "http://")):
             strict_missing_vars.append("public_api_url must be http(s) URL")

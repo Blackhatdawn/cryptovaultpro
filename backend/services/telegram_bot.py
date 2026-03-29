@@ -654,7 +654,7 @@ Check logs and take action if needed.
                     user = await db.users.find_one({"id": user_id})
                     if user:
                         from email_service import email_service
-                        from email_templates import kyc_status_update
+                        from email_templates import kyc_status_update, kyc_status_update_text
                         
                         html_content = kyc_status_update(
                             user['name'],
@@ -665,9 +665,14 @@ Check logs and take action if needed.
                         
                         await email_service.send_email(
                             user['email'],
-                            '✅ KYC Approved - Full Access Granted',
+                            f'{settings.email_from_name} - KYC approved',
                             html_content,
-                            f"Your KYC has been approved. Welcome to CryptoVault!"
+                            kyc_status_update_text(
+                                user['name'],
+                                'approved',
+                                1,
+                                'Your identity verification has been approved. You now have full access to all features.',
+                            )
                         )
                     
                     return f"✅ User {user_id} KYC approved"
@@ -702,7 +707,7 @@ Check logs and take action if needed.
                     user = await db.users.find_one({"id": user_id})
                     if user:
                         from email_service import email_service
-                        from email_templates import kyc_status_update
+                        from email_templates import kyc_status_update, kyc_status_update_text
                         
                         html_content = kyc_status_update(
                             user['name'],
@@ -713,9 +718,14 @@ Check logs and take action if needed.
                         
                         await email_service.send_email(
                             user['email'],
-                            '❌ KYC Verification Not Approved',
+                            f'{settings.email_from_name} - KYC action required',
                             html_content,
-                            f"Your KYC was not approved: {reason}"
+                            kyc_status_update_text(
+                                user['name'],
+                                'rejected',
+                                1,
+                                f'Your identity verification was not approved. Reason: {reason}. Please resubmit with correct documents.',
+                            )
                         )
                     
                     return f"✅ User {user_id} KYC rejected: {reason}"

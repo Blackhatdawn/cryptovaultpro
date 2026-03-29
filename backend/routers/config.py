@@ -47,9 +47,20 @@ async def get_public_config(request: Request) -> Dict[str, Any]:
     This endpoint intentionally excludes secrets.
     """
     request_base_url = derive_request_base_url(request)
-    api_base_url = normalize_base_url(settings.public_api_url or "")
-    prefer_relative_api = not bool(api_base_url)
-    ws_base_url = derive_ws_base_url(settings.public_ws_url or api_base_url or request_base_url)
+
+    # If the frontend is proxying requests (e.g. Vercel rewrites), prefer same-origin API calls.
+    # This avoids cross-site cookie issues and keeps auth stable.
+    is_vercel_proxy = (request.headers.get("x-vercel-proxy") or "").lower() == "true"
+
+    api_base_url_setting = normalize_base_url(settings.public_api_url or "")
+    prefer_relative_api = is_vercel_proxy or not bool(api_base_url_setting)
+    api_base_url = "" if prefer_relative_api else api_base_url_setting
+
+    # When proxying, derive WS base URL from the request origin (same-origin).
+    if prefer_relative_api:
+        ws_base_url = derive_ws_base_url(request_base_url)
+    else:
+        ws_base_url = derive_ws_base_url(settings.public_ws_url or api_base_url or request_base_url)
     app_url = normalize_base_url(settings.app_url)
     logo_url = settings.public_logo_url or f"{app_url}/favicon.svg"
     support_email = settings.public_support_email or settings.email_from

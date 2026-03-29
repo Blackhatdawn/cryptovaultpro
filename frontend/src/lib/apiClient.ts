@@ -731,25 +731,6 @@ export const api = {
       apiClient.get(`/api/transfers/fee-estimate?amount=${amount}&currency=${currency}${priority ? `&priority=${priority}` : ''}`),
   },
 
-  // Notifications
-  notifications: {
-    getAll: (skip: number = 0, limit: number = 50) =>
-      apiClient.get(`/api/notifications?skip=${skip}&limit=${limit}`),
-    create: (data: {
-      title: string;
-      message: string;
-      type?: string;
-      link?: string;
-    }) =>
-      apiClient.post('/api/notifications', data),
-    markAsRead: (notificationId: string) =>
-      apiClient.patch(`/api/notifications/${notificationId}/read`),
-    markAllAsRead: () =>
-      apiClient.post('/api/notifications/mark-all-read'),
-    delete: (notificationId: string) =>
-      apiClient.delete(`/api/notifications/${notificationId}`),
-  },
-
   // Prices (real-time price data)
   prices: {
     getAll: () =>

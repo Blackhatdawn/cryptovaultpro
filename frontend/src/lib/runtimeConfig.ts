@@ -96,13 +96,15 @@ const getFallbackConfig = (): RuntimeConfig => ({
 });
 
 const mergeConfig = (base: RuntimeConfig, incoming: Partial<RuntimeConfig>): RuntimeConfig => {
-  // In development/preview, always prefer relative API to use proxy
-  const isDev = import.meta.env.DEV || 
-    (typeof window !== 'undefined' && 
-      !window.location.hostname.endsWith('cryptovaultpro.finance') &&
-      !window.location.hostname.endsWith('.vercel.app'));
-  
-  const preferRelativeApi = isDev || incoming.preferRelativeApi || base.preferRelativeApi || false;
+  // Prefer-relative is the safest default when a platform proxy is in front (Vercel rewrites).
+  // Do not guess "dev" based on hostname; use backend-provided preferRelativeApi + build mode.
+  const runtimeEnv = String(incoming.environment || base.environment || '').toLowerCase();
+  const isProductionRuntime = runtimeEnv === 'production';
+
+  const preferRelativeApi =
+    Boolean(incoming.preferRelativeApi ?? base.preferRelativeApi) ||
+    (import.meta.env.DEV && !isProductionRuntime);
+
   const merged: RuntimeConfig = {
     ...base,
     ...incoming,

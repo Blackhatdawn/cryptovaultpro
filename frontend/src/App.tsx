@@ -41,6 +41,7 @@ const EnhancedTrade = lazy(() => import("@/pages/EnhancedTrade"));
 const Earn = lazy(() => import("@/pages/Earn"));
 const Learn = lazy(() => import("@/pages/Learn"));
 const Contact = lazy(() => import("@/pages/Contact"));
+const VerifyEmail = lazy(() => import("@/pages/VerifyEmail"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const About = lazy(() => import("@/pages/About"));
@@ -230,6 +231,7 @@ const AppContent = () => {
           {/* Password Reset */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/reset" element={<ResetConfirm />} />
+          <Route path="/verify" element={<VerifyEmail />} />
 
           {/* Company Pages */}
           <Route path="/about" element={<About />} />

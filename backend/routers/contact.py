@@ -1,6 +1,6 @@
 """Public contact form endpoint."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, EmailStr, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -44,25 +44,23 @@ async def submit_contact_form(payload: ContactRequest, request: Request, db=Depe
 
     support_email = settings.public_support_email or settings.email_from or "support@cryptovaultpro.finance"
     try:
+        from email_templates import contact_submission_internal
+
+        parts = contact_submission_internal(
+            name=doc["name"],
+            email=doc["email"],
+            company=doc["company"],
+            phone=doc["phone"],
+            subject=doc["subject"],
+            message=doc["message"],
+            ip_address=doc["ip_address"],
+            user_agent=doc["user_agent"],
+        )
         await email_service.send_email(
             to_email=support_email,
-            subject=f"[Contact] {doc['subject']}",
-            html_content=(
-                f"<h3>New contact form submission</h3>"
-                f"<p><b>Name:</b> {doc['name']}</p>"
-                f"<p><b>Email:</b> {doc['email']}</p>"
-                f"<p><b>Company:</b> {doc['company'] or '-'} </p>"
-                f"<p><b>Phone:</b> {doc['phone'] or '-'} </p>"
-                f"<p><b>Message:</b><br>{doc['message']}</p>"
-            ),
-            text_content=(
-                f"New contact form submission\n"
-                f"Name: {doc['name']}\n"
-                f"Email: {doc['email']}\n"
-                f"Company: {doc['company'] or '-'}\n"
-                f"Phone: {doc['phone'] or '-'}\n"
-                f"Message:\n{doc['message']}"
-            ),
+            subject=parts.subject,
+            html_content=parts.html,
+            text_content=parts.text,
         )
     except Exception:
         # Non-blocking for end-user flow

@@ -159,15 +159,15 @@ async def admin_login_request_otp(
     otp_response_code = None  # Only set in dev mode for mock email
     try:
         from email_service import email_service
-        from email_templates import admin_otp_email
+        from email_templates import admin_otp_email, admin_otp_email_text
         
         ip_address = request.client.host if request.client else "unknown"
         html_content = admin_otp_email(admin["name"], otp_code, ip_address)
-        text_content = f"Your CryptoVault Admin OTP code is: {otp_code}. This code expires in 5 minutes."
+        text_content = admin_otp_email_text(admin["name"], otp_code, ip_address)
         
         await email_service.send_email(
             to_email=admin["email"],
-            subject="CryptoVault Admin Login - OTP Verification",
+            subject=f"{settings.email_from_name} Admin - OTP verification",
             html_content=html_content,
             text_content=text_content
         )

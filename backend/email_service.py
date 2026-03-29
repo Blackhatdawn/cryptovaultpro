@@ -221,137 +221,30 @@ class EmailService:
         Generate verification email content with 6-digit OTP code.
         Returns: (subject, html_content, text_content)
         """
-        subject = "🔐 CryptoVault - Verify Your Email"
+        # Keep subjects simple for deliverability (avoid emoji-heavy subjects).
+        subject = f"{self.from_name} - Verify your email"
         
         base = (verification_url or "").rstrip("/")
         separator = "&" if "?" in base else "?"
         verify_link = f"{base}{separator}token={token}"
-        
-        html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #0a0a0b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0b; padding: 40px 20px;">
-        <tr>
-            <td align="center">
-                <table width="100%" style="max-width: 600px;" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #1a1a1d 0%, #0d0d0e 100%); border-radius: 16px; border: 1px solid #2a2a2d; overflow: hidden;">
-                    {self._get_email_header()}
-                    
-                    <!-- Body -->
-                    <tr>
-                        <td style="padding: 40px; background: #1a1a1d;">
-                            <h2 style="margin: 0 0 16px; color: #ffffff; font-size: 24px; font-weight: 600;">Verify Your Email</h2>
-                            <p style="margin: 0 0 24px; color: #a0a0a5; font-size: 16px; line-height: 1.6;">
-                                Hello {name},<br><br>
-                                Welcome to CryptoVault! Use the verification code below to complete your account setup.
-                            </p>
-                            
-                            <!-- OTP Code Box -->
-                            <div style="background: linear-gradient(135deg, #C5A049 0%, #a88b3d 100%); border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
-                                <p style="margin: 0 0 8px; color: #0a0a0b; font-size: 14px; font-weight: 500; letter-spacing: 1px;">YOUR VERIFICATION CODE</p>
-                                <div style="font-size: 36px; font-weight: 700; color: #0a0a0b; letter-spacing: 8px; font-family: 'Courier New', monospace;">
-                                    {code}
-                                </div>
-                            </div>
-                            
-                            <p style="margin: 24px 0 0; color: #ff6b6b; font-size: 14px; text-align: center;">
-                                ⏰ This code expires in <strong>24 hours</strong>
-                            </p>
-                            
-                            <div style="text-align: center; margin: 24px 0;">
-                                <p style="color: #666; font-size: 14px; margin: 0 0 16px;">Or click the button below:</p>
-                                <a href="{verify_link}" style="display: inline-block; background: linear-gradient(135deg, #C5A049 0%, #a88b3d 100%); color: #0a0a0b; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">Verify Email</a>
-                            </div>
-                            
-                            <hr style="border: none; border-top: 1px solid #2a2a2d; margin: 32px 0;">
-                            
-                            <p style="margin: 0; color: #666; font-size: 13px; line-height: 1.6;">
-                                <strong>Security Notice:</strong> If you didn't request this code, please ignore this email. Never share your verification code with anyone. CryptoVault will never ask for your password or codes via email.
-                            </p>
-                        </td>
-                    </tr>
-                    
-                    {self._get_email_footer()}
-                </table>
-            </td>
-        </tr>
-    </table>
-</body>
-</html>
-        """
-        
-        text_content = f"""
-CryptoVault - Verify Your Email
 
-Hello {name},
+        from email_templates import email_verification, email_verification_text
 
-Your verification code is: {code}
-
-Or verify using this link: {verify_link}
-
-This code expires in 24 hours.
-
-If you didn't request this code, please ignore this email.
-
----
-CryptoVault Pro.
-1201 Market Street, Suite 101, Wilmington, DE 19801
-        """
+        html_content = email_verification(name=name, otp_code=code, verify_link=verify_link)
+        text_content = email_verification_text(name=name, otp_code=code, verify_link=verify_link)
         
         return subject, html_content, text_content
     
     def get_welcome_email(self, name: str, app_url: str) -> Tuple[str, str, str]:
         """Generate welcome email after successful verification."""
-        subject = "🎉 Welcome to CryptoVault - Your Account is Ready!"
-        
-        html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body style="margin: 0; padding: 0; background-color: #0a0a0b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0b; padding: 40px 20px;">
-        <tr>
-            <td align="center">
-                <table width="600" cellpadding="0" cellspacing="0" style="background: #1a1a1d; border-radius: 16px; border: 1px solid #2a2a2d;">
-                    {self._get_email_header()}
-                    <tr>
-                        <td style="padding: 40px; text-align: center;">
-                            <h1 style="color: #C5A049; margin: 0 0 20px;">🎉 Welcome to CryptoVault!</h1>
-                            <p style="color: #ffffff; font-size: 18px; margin: 0 0 16px;">Hello {name},</p>
-                            <p style="color: #a0a0a5; font-size: 16px; line-height: 1.6; margin: 0 0 24px;">
-                                Your account has been verified and is now ready to use. Start exploring secure P2P trading and institutional-grade custody.
-                            </p>
-                            <a href="{app_url}/dashboard" style="display: inline-block; background: linear-gradient(135deg, #C5A049 0%, #a88b3d 100%); color: #0a0a0b; padding: 16px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">Go to Dashboard</a>
-                        </td>
-                    </tr>
-                    {self._get_email_footer()}
-                </table>
-            </td>
-        </tr>
-    </table>
-</body>
-</html>
-        """
-        
-        text_content = f"""
-Welcome to CryptoVault!
+        subject = f"{self.from_name} - Welcome"
 
-Hello {name},
+        from email_templates import welcome_email, welcome_email_text
 
-Your account has been verified and is now ready to use.
+        # Template uses settings.app_url for links to avoid drift.
+        html_content = welcome_email(name=name)
+        text_content = welcome_email_text(name=name)
 
-Get started: {app_url}/dashboard
-
----
-CryptoVault Pro.
-        """
-        
         return subject, html_content, text_content
     
     def get_password_reset_email(
@@ -361,69 +254,15 @@ CryptoVault Pro.
         app_url: str
     ) -> Tuple[str, str, str]:
         """Generate password reset email."""
-        subject = "🔑 CryptoVault - Reset Your Password"
+        subject = f"{self.from_name} - Reset your password"
         
         reset_link = f"{app_url}/reset?token={token}"
-        
-        html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body style="margin: 0; padding: 0; background-color: #0a0a0b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0b; padding: 40px 20px;">
-        <tr>
-            <td align="center">
-                <table width="600" cellpadding="0" cellspacing="0" style="background: #1a1a1d; border-radius: 16px; border: 1px solid #2a2a2d;">
-                    {self._get_email_header()}
-                    <tr>
-                        <td style="padding: 40px;">
-                            <h2 style="margin: 0 0 16px; color: #ffffff; font-size: 24px; font-weight: 600;">Reset Your Password</h2>
-                            <p style="margin: 0 0 24px; color: #a0a0a5; font-size: 16px; line-height: 1.6;">
-                                Hello {name},<br><br>
-                                We received a request to reset your password. Click the button below to create a new password.
-                            </p>
-                            
-                            <div style="text-align: center; margin: 24px 0;">
-                                <a href="{reset_link}" style="display: inline-block; background: linear-gradient(135deg, #C5A049 0%, #a88b3d 100%); color: #0a0a0b; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600;">Reset Password</a>
-                            </div>
-                            
-                            <p style="margin: 24px 0 0; color: #ff6b6b; font-size: 14px; text-align: center;">
-                                ⏰ This link expires in <strong>1 hour</strong>
-                            </p>
-                            
-                            <hr style="border: none; border-top: 1px solid #2a2a2d; margin: 32px 0;">
-                            
-                            <p style="margin: 0; color: #666; font-size: 13px; line-height: 1.6;">
-                                If you didn't request a password reset, please ignore this email or contact support if you have concerns.
-                            </p>
-                        </td>
-                    </tr>
-                    {self._get_email_footer()}
-                </table>
-            </td>
-        </tr>
-    </table>
-</body>
-</html>
-        """
-        
-        text_content = f"""
-CryptoVault - Reset Your Password
 
-Hello {name},
+        from email_templates import password_reset, password_reset_text
 
-Reset your password using this link: {reset_link}
+        html_content = password_reset(name=name, reset_link=reset_link)
+        text_content = password_reset_text(name=name, reset_link=reset_link)
 
-This link expires in 1 hour.
-
-If you didn't request this, please ignore this email.
-
----
-CryptoVault Pro.
-        """
-        
         return subject, html_content, text_content
     
     async def send_email(
@@ -718,9 +557,9 @@ CryptoVault Pro.
         note: Optional[str] = None
     ) -> bool:
         """Send P2P transfer confirmation to sender."""
-        from email_templates import p2p_transfer_sent
+        from email_templates import p2p_transfer_sent, p2p_transfer_sent_text
         
-        subject = f"✅ Transfer Sent: {amount} {asset} to {recipient_name}"
+        subject = f"Transfer sent: {amount} {asset} to {recipient_name}"
         html_content = p2p_transfer_sent(
             sender_name=sender_name,
             recipient_name=recipient_name,
@@ -731,7 +570,16 @@ CryptoVault Pro.
             transaction_id=transaction_id,
             note=note
         )
-        text_content = f"You sent {amount} {asset} to {recipient_name} ({recipient_email}). Transaction ID: {transaction_id}"
+        text_content = p2p_transfer_sent_text(
+            sender_name=sender_name,
+            recipient_name=recipient_name,
+            recipient_email=recipient_email,
+            amount=amount,
+            asset=asset,
+            gas_fee=gas_fee,
+            transaction_id=transaction_id,
+            note=note,
+        )
         
         return await self.send_email(to_email, subject, html_content, text_content)
     
@@ -747,9 +595,9 @@ CryptoVault Pro.
         note: Optional[str] = None
     ) -> bool:
         """Send P2P transfer notification to recipient."""
-        from email_templates import p2p_transfer_received
+        from email_templates import p2p_transfer_received, p2p_transfer_received_text
         
-        subject = f"🎉 You Received {amount} {asset} from {sender_name}"
+        subject = f"Funds received: {amount} {asset} from {sender_name}"
         html_content = p2p_transfer_received(
             recipient_name=recipient_name,
             sender_name=sender_name,
@@ -759,7 +607,15 @@ CryptoVault Pro.
             transaction_id=transaction_id,
             note=note
         )
-        text_content = f"You received {amount} {asset} from {sender_name} ({sender_email}). Transaction ID: {transaction_id}"
+        text_content = p2p_transfer_received_text(
+            recipient_name=recipient_name,
+            sender_name=sender_name,
+            sender_email=sender_email,
+            amount=amount,
+            asset=asset,
+            transaction_id=transaction_id,
+            note=note,
+        )
         
         return await self.send_email(to_email, subject, html_content, text_content)
     
@@ -774,10 +630,10 @@ CryptoVault Pro.
         alert_id: str
     ) -> bool:
         """Send price alert notification."""
-        from email_templates import price_alert_triggered
+        from email_templates import price_alert_triggered, price_alert_triggered_text
         
         condition_text = "reached" if condition == "above" else "dropped below"
-        subject = f"🔔 {asset} {condition_text} {target_price}"
+        subject = f"Price alert: {asset} {condition_text} {target_price}"
         html_content = price_alert_triggered(
             name=name,
             asset=asset,
@@ -786,7 +642,14 @@ CryptoVault Pro.
             condition=condition,
             alert_id=alert_id
         )
-        text_content = f"{asset} has {condition_text} your target price of {target_price}. Current price: {current_price}"
+        text_content = price_alert_triggered_text(
+            name=name,
+            asset=asset,
+            current_price=current_price,
+            target_price=target_price,
+            condition=condition,
+            alert_id=alert_id,
+        )
         
         return await self.send_email(to_email, subject, html_content, text_content)
     
@@ -801,9 +664,9 @@ CryptoVault Pro.
         login_time: str
     ) -> bool:
         """Send new device login notification."""
-        from email_templates import login_new_device
+        from email_templates import login_new_device, login_new_device_text
         
-        subject = "🔐 New Login to Your CryptoVault Account"
+        subject = f"{self.from_name} - New login detected"
         html_content = login_new_device(
             name=name,
             device=device,
@@ -812,7 +675,14 @@ CryptoVault Pro.
             location=location,
             login_time=login_time
         )
-        text_content = f"New login detected from {device} ({browser}) in {location}. IP: {ip_address}. Time: {login_time}"
+        text_content = login_new_device_text(
+            name=name,
+            device=device,
+            browser=browser,
+            ip_address=ip_address,
+            location=location,
+            login_time=login_time,
+        )
         
         return await self.send_email(to_email, subject, html_content, text_content)
     
@@ -826,9 +696,9 @@ CryptoVault Pro.
         location: str
     ) -> bool:
         """Send security alert notification."""
-        from email_templates import security_alert
+        from email_templates import security_alert, security_alert_text
         
-        subject = f"🔐 Security Alert: {alert_type}"
+        subject = f"{self.from_name} - Security alert: {alert_type}"
         html_content = security_alert(
             name=name,
             alert_type=alert_type,
@@ -836,7 +706,13 @@ CryptoVault Pro.
             ip_address=ip_address,
             location=location
         )
-        text_content = f"Security Alert: {alert_type}. {details}. IP: {ip_address}. Location: {location}"
+        text_content = security_alert_text(
+            name=name,
+            alert_type=alert_type,
+            details=details,
+            ip_address=ip_address,
+            location=location,
+        )
         
         return await self.send_email(to_email, subject, html_content, text_content)
 

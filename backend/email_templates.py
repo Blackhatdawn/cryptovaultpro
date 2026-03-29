@@ -1,586 +1,432 @@
 """
-CryptoVault Email Templates
-Professional, branded HTML email templates for all transactional emails
+Transactional email templates for CryptoVault.
+
+Goals:
+- Consistent branding (pulled from settings)
+- Lightweight HTML (avoid heavy footers/social blocks)
+- Good rendering on iOS Mail and common clients (table layout, inline styles, responsive padding)
+- Deliverability-friendly copy (no emoji-heavy subjects required, limited links/images)
 """
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from html import escape as _escape
 from typing import Optional
 
 from config import settings
 
-# Base URL for email assets (configurable via backend .env)
-SITE_URL = settings.app_url.rstrip("/")
-LOGO_URL = settings.public_logo_url or f"{SITE_URL}/favicon.svg"
-SUPPORT_EMAIL = settings.public_support_email or "support@cryptovaultpro.finance"
+
+def _brand_name() -> str:
+    # Prefer the "From" display name, then public branding.
+    name = (getattr(settings, "email_from_name", "") or "").strip()
+    if name:
+        return name
+    name = (getattr(settings, "public_site_name", "") or "").strip()
+    if name:
+        return name
+    return (getattr(settings, "app_name", "") or "CryptoVault").strip()
+
+
+def _site_url() -> str:
+    url = (getattr(settings, "app_url", "") or "").strip()
+    if not url:
+        return "https://www.cryptovaultpro.finance"
+    return url.rstrip("/")
+
+
+BRAND_NAME = _brand_name()
+SITE_URL = _site_url()
+LOGO_URL = (getattr(settings, "public_logo_url", None) or f"{SITE_URL}/logo.svg").strip()
+SUPPORT_EMAIL = (
+    (getattr(settings, "public_support_email", None) or getattr(settings, "email_from", None) or "").strip()
+    or "support@cryptovaultpro.finance"
+)
+
+# Minimal brand palette (dark, but simple).
+_BG = "#0b0b0c"
+_CARD = "#141416"
+_BORDER = "#2a2a2d"
+_TEXT = "#ffffff"
+_MUTED = "#a1a1aa"
+_PRIMARY = "#C5A049"
+_DANGER = "#ef4444"
+
+
+@dataclass(frozen=True)
+class EmailParts:
+    subject: str
+    html: str
+    text: str
+
+
+def _e(value: object) -> str:
+    """HTML-escape dynamic content to prevent injection and broken markup."""
+    if value is None:
+        return ""
+    return _escape(str(value), quote=True)
+
+
+def _format_url(url: str) -> str:
+    return (url or "").strip()
+
+
+def _button(url: str, label: str) -> str:
+    href = _e(_format_url(url))
+    text = _e(label)
+    if not href:
+        return ""
+    return (
+        f'<a href="{href}" '
+        f'style="display:inline-block;background:{_PRIMARY};color:{_BG};'
+        f'font-weight:700;font-size:15px;line-height:1;'
+        f'padding:14px 22px;border-radius:10px;text-decoration:none;">'
+        f"{text}</a>"
+    )
+
+
+def _mono_box(value: str) -> str:
+    return (
+        f'<div style="margin:16px 0;padding:14px 16px;background:#0f0f11;'
+        f'border:1px solid {_BORDER};border-radius:12px;'
+        f'font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \'Liberation Mono\', \'Courier New\', monospace;'
+        f'font-size:22px;font-weight:800;letter-spacing:3px;color:{_TEXT};text-align:center;">'
+        f"{_e(value)}</div>"
+    )
+
+
+def _kv_table(rows: list[tuple[str, str]]) -> str:
+    rendered = []
+    for k, v in rows:
+        rendered.append(
+            "<tr>"
+            f'<td style="padding:10px 0;color:{_MUTED};font-size:12px;width:38%;">{_e(k)}</td>'
+            f'<td style="padding:10px 0;color:{_TEXT};font-size:13px;">{_e(v)}</td>'
+            "</tr>"
+        )
+    return (
+        f'<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" '
+        f'style="margin:16px 0;border-top:1px solid {_BORDER};">'
+        + "".join(rendered)
+        + "</table>"
+    )
+
 
 def get_base_template(content: str, preheader: str = "") -> str:
     """
-    Base email template with CryptoVault branding
-    All templates extend this base
+    Base email shell.
+    Content should already be safe HTML (dynamic values escaped before interpolation).
     """
-    return f'''<!DOCTYPE html>
+    pre = _e(preheader)
+    year = datetime.now(timezone.utc).year
+    return f"""<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>CryptoVault</title>
-    <!--[if mso]>
-    <noscript>
-        <xml>
-            <o:OfficeDocumentSettings>
-                <o:PixelsPerInch>96</o:PixelsPerInch>
-            </o:OfficeDocumentSettings>
-        </xml>
-    </noscript>
-    <![endif]-->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>{_e(BRAND_NAME)}</title>
+  <style>
+    @media (max-width: 600px) {{
+      .container {{ width: 100% !important; }}
+      .px {{ padding-left: 16px !important; padding-right: 16px !important; }}
+      .pt {{ padding-top: 18px !important; }}
+      .pb {{ padding-bottom: 18px !important; }}
+    }}
+  </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;">
-    <!-- Preheader text (hidden) -->
-    <div style="display: none; max-height: 0; overflow: hidden; font-size: 1px; line-height: 1px; color: #0a0a0a;">
-        {preheader}
-    </div>
-    
-    <!-- Email Container -->
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0a0a0a;">
-        <tr>
-            <td align="center" style="padding: 40px 20px;">
-                
-                <!-- Main Content Card -->
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #141414; border-radius: 16px; border: 1px solid rgba(251, 191, 36, 0.1);">
-                    
-                    <!-- Header with Logo -->
-                    <tr>
-                        <td align="center" style="padding: 40px 40px 30px;">
-                            <a href="{SITE_URL}" style="text-decoration: none;">
-                                <img src="{LOGO_URL}" alt="CryptoVault" width="60" height="60" style="display: block;">
-                            </a>
-                            <h1 style="margin: 16px 0 0; font-size: 24px; font-weight: 700; color: #ffffff;">
-                                Crypto<span style="color: #FBBF24;">Vault</span>
-                            </h1>
-                            <p style="margin: 4px 0 0; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">
-                                Secure Global Trading
-                            </p>
-                        </td>
-                    </tr>
-                    
-                    <!-- Main Content -->
-                    <tr>
-                        <td style="padding: 0 40px 40px;">
-                            {content}
-                        </td>
-                    </tr>
-                    
-                    <!-- Footer -->
-                    <tr>
-                        <td style="padding: 30px 40px; border-top: 1px solid rgba(251, 191, 36, 0.1);">
-                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                                <tr>
-                                    <td align="center">
-                                        <p style="margin: 0 0 16px; font-size: 12px; color: #6b7280;">
-                                            Follow us on social media
-                                        </p>
-                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                                            <tr>
-                                                <td style="padding: 0 8px;">
-                                                    <a href="https://twitter.com/CryptoVaultFin" style="color: #FBBF24; text-decoration: none;">Twitter</a>
-                                                </td>
-                                                <td style="padding: 0 8px; color: #374151;">|</td>
-                                                <td style="padding: 0 8px;">
-                                                    <a href="https://linkedin.com/company/cryptovault-financial" style="color: #FBBF24; text-decoration: none;">LinkedIn</a>
-                                                </td>
-                                                <td style="padding: 0 8px; color: #374151;">|</td>
-                                                <td style="padding: 0 8px;">
-                                                    <a href="https://discord.gg/cryptovault" style="color: #FBBF24; text-decoration: none;">Discord</a>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    
-                    <!-- Legal Footer -->
-                    <tr>
-                        <td style="padding: 20px 40px 30px; background-color: #0a0a0a; border-radius: 0 0 16px 16px;">
-                            <p style="margin: 0 0 8px; font-size: 11px; color: #4b5563; text-align: center;">
-                                © 2025 CryptoVault Financial, Inc. All rights reserved.
-                            </p>
-                            <p style="margin: 0 0 8px; font-size: 11px; color: #4b5563; text-align: center;">
-                                1201 Market Street, Suite 101, Wilmington, DE 19801
-                            </p>
-                            <p style="margin: 0; font-size: 11px; color: #4b5563; text-align: center;">
-                                <a href="{SITE_URL}/privacy" style="color: #FBBF24; text-decoration: none;">Privacy</a> · 
-                                <a href="{SITE_URL}/terms" style="color: #FBBF24; text-decoration: none;">Terms</a> · 
-                                <a href="{SITE_URL}/help" style="color: #FBBF24; text-decoration: none;">Help Center</a>
-                            </p>
-                        </td>
-                    </tr>
-                    
-                </table>
-                
+<body style="margin:0;padding:0;background:{_BG};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:{_BG};opacity:0;">
+    {pre}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  </div>
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:{_BG};">
+    <tr>
+      <td align="center" style="padding:28px 14px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="container" style="width:100%;max-width:600px;background:{_CARD};border:1px solid {_BORDER};border-radius:16px;overflow:hidden;">
+          <tr>
+            <td align="center" class="px pt" style="padding:26px 26px 16px;">
+              <a href="{_e(SITE_URL)}" style="text-decoration:none;">
+                <img src="{_e(LOGO_URL)}" width="48" height="48" alt="{_e(BRAND_NAME)}" style="display:block;border:0;outline:none;text-decoration:none;">
+              </a>
+              <div style="margin-top:12px;font-size:18px;font-weight:800;color:{_TEXT};letter-spacing:0.2px;">
+                {_e(BRAND_NAME)}
+              </div>
             </td>
-        </tr>
-    </table>
+          </tr>
+          <tr>
+            <td class="px pb" style="padding:10px 26px 22px;">
+              {content}
+            </td>
+          </tr>
+          <tr>
+            <td class="px" style="padding:16px 26px 24px;border-top:1px solid {_BORDER};">
+              <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.5;text-align:center;">
+                Need help? Contact <a href="mailto:{_e(SUPPORT_EMAIL)}" style="color:{_PRIMARY};text-decoration:none;">{_e(SUPPORT_EMAIL)}</a>
+              </p>
+              <p style="margin:10px 0 0;color:{_MUTED};font-size:11px;line-height:1.5;text-align:center;">
+                © {year} {_e(BRAND_NAME)}. This is an automated message, please do not reply.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
-</html>'''
+</html>"""
+
+
+# ----------------------------
+# Auth / Account Emails
+# ----------------------------
+
+def email_verification(name: str, otp_code: str, verify_link: Optional[str] = None) -> str:
+    """Email verification with OTP code and optional verify link."""
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Verify your email</h2>
+      <p style="margin:0 0 14px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, use this code to verify your email address.
+      </p>
+      {_mono_box(otp_code)}
+      <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        This code expires in 24 hours. If you did not create an account, you can ignore this email.
+      </p>
+    """
+    if verify_link:
+        content += f"""
+          <div style="margin:18px 0 6px;text-align:center;">
+            {_button(verify_link, "Verify email")}
+          </div>
+          <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;word-break:break-word;">
+            Or open this link: <a href="{_e(verify_link)}" style="color:{_PRIMARY};text-decoration:none;">{_e(verify_link)}</a>
+          </p>
+        """
+    content += f"""
+      <div style="margin-top:16px;padding:12px 14px;background:#0f0f11;border:1px solid {_BORDER};border-radius:12px;">
+        <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+          Security tip: {_e(BRAND_NAME)} will never ask you for your password, recovery phrase, or 2FA codes by email.
+        </p>
+      </div>
+    """
+    return get_base_template(content, f"Your verification code is {otp_code}.")
+
+
+def email_verification_text(name: str, otp_code: str, verify_link: Optional[str] = None) -> str:
+    lines = [
+        f"{BRAND_NAME} - Verify your email",
+        "",
+        f"Hi {name},",
+        "",
+        f"Your verification code is: {otp_code}",
+        "This code expires in 24 hours.",
+    ]
+    if verify_link:
+        lines += ["", f"Verify link: {verify_link}"]
+    lines += [
+        "",
+        "If you did not create an account, you can ignore this email.",
+        "",
+        f"Support: {SUPPORT_EMAIL}",
+    ]
+    return "\n".join(lines)
 
 
 def welcome_email(name: str) -> str:
-    """Welcome/Onboarding email for new users"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Welcome to CryptoVault, {name}! 🎉
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Thank you for joining the most secure cryptocurrency platform. Your journey into digital assets starts here.
-        </p>
-        
-        <!-- Getting Started Steps -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 20px; background-color: #1f1f1f; border-radius: 12px; margin-bottom: 16px;">
-                    <h3 style="margin: 0 0 16px; font-size: 16px; font-weight: 600; color: #FBBF24;">
-                        Get Started in 3 Steps:
-                    </h3>
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                                    <tr>
-                                        <td style="width: 32px; height: 32px; background-color: #FBBF24; border-radius: 50%; text-align: center; vertical-align: middle; font-weight: 700; color: #0a0a0a;">1</td>
-                                        <td style="padding-left: 16px;">
-                                            <p style="margin: 0; font-size: 14px; font-weight: 600; color: #ffffff;">Verify Your Identity</p>
-                                            <p style="margin: 4px 0 0; font-size: 13px; color: #6b7280;">Complete KYC to unlock full trading features</p>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                                    <tr>
-                                        <td style="width: 32px; height: 32px; background-color: #FBBF24; border-radius: 50%; text-align: center; vertical-align: middle; font-weight: 700; color: #0a0a0a;">2</td>
-                                        <td style="padding-left: 16px;">
-                                            <p style="margin: 0; font-size: 14px; font-weight: 600; color: #ffffff;">Enable 2FA Security</p>
-                                            <p style="margin: 4px 0 0; font-size: 13px; color: #6b7280;">Protect your account with two-factor authentication</p>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0;">
-                                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                                    <tr>
-                                        <td style="width: 32px; height: 32px; background-color: #FBBF24; border-radius: 50%; text-align: center; vertical-align: middle; font-weight: 700; color: #0a0a0a;">3</td>
-                                        <td style="padding-left: 16px;">
-                                            <p style="margin: 0; font-size: 14px; font-weight: 600; color: #ffffff;">Make Your First Deposit</p>
-                                            <p style="margin: 4px 0 0; font-size: 13px; color: #6b7280;">Fund your account and start trading</p>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 16px;">
-                    <a href="{SITE_URL}/dashboard" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        Go to Dashboard
-                    </a>
-                </td>
-            </tr>
-        </table>
-        
-        <p style="margin: 0; font-size: 13px; color: #6b7280; text-align: center;">
-            Questions? Our support team is here 24/7 at <a href="mailto:{SUPPORT_EMAIL}" style="color: #FBBF24;">{SUPPORT_EMAIL}</a>
-        </p>
-    '''
-    return get_base_template(content, f"Welcome to CryptoVault, {name}! Start your crypto journey today.")
+    """Welcome email (post verification)."""
+    dashboard_url = f"{SITE_URL}/dashboard"
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Welcome</h2>
+      <p style="margin:0 0 14px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, your account is verified and ready to use.
+      </p>
+      <div style="margin:18px 0 6px;text-align:center;">
+        {_button(dashboard_url, "Open dashboard")}
+      </div>
+      <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;word-break:break-word;">
+        Dashboard link: <a href="{_e(dashboard_url)}" style="color:{_PRIMARY};text-decoration:none;">{_e(dashboard_url)}</a>
+      </p>
+    """
+    return get_base_template(content, "Your account is ready.")
 
 
-def email_verification(name: str, otp_code: str) -> str:
-    """Email verification with OTP code"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Verify Your Email
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, please use the verification code below to complete your email verification. This code expires in 10 minutes.
-        </p>
-        
-        <!-- OTP Code Box -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 24px; background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%); border: 1px solid rgba(251, 191, 36, 0.2); border-radius: 12px;">
-                    <p style="margin: 0 0 8px; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 2px;">
-                        Your Verification Code
-                    </p>
-                    <p style="margin: 0; font-size: 40px; font-weight: 700; color: #FBBF24; letter-spacing: 8px; font-family: monospace;">
-                        {otp_code}
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <p style="margin: 24px 0 0; font-size: 13px; color: #6b7280; text-align: center;">
-            If you didn't request this code, please ignore this email or contact support if you have concerns.
-        </p>
-        
-        <!-- Security Notice -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: #1f1f1f; border-radius: 8px; border-left: 3px solid #FBBF24;">
-                    <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                        🔒 <strong style="color: #ffffff;">Security Tip:</strong> CryptoVault will never ask for your password or private keys via email.
-                    </p>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"Your CryptoVault verification code: {otp_code}")
+def welcome_email_text(name: str) -> str:
+    dashboard_url = f"{SITE_URL}/dashboard"
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - Welcome",
+            "",
+            f"Hi {name},",
+            "",
+            "Your account is verified and ready to use.",
+            "",
+            f"Open dashboard: {dashboard_url}",
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
 
 
 def password_reset(name: str, reset_link: str) -> str:
-    """Password reset email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Reset Your Password
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, we received a request to reset your password. Click the button below to create a new password. This link expires in 1 hour.
-        </p>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 8px 0 24px;">
-                    <a href="{reset_link}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        Reset Password
-                    </a>
-                </td>
-            </tr>
-        </table>
-        
-        <p style="margin: 0 0 16px; font-size: 13px; color: #6b7280;">
-            Or copy and paste this link into your browser:
-        </p>
-        <p style="margin: 0 0 24px; font-size: 12px; color: #FBBF24; word-break: break-all;">
-            {reset_link}
-        </p>
-        
-        <!-- Security Notice -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 16px; background-color: #1f1f1f; border-radius: 8px; border-left: 3px solid #EF4444;">
-                    <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                        ⚠️ <strong style="color: #ffffff;">Didn't request this?</strong> If you didn't request a password reset, please secure your account immediately by changing your password and enabling 2FA.
-                    </p>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, "Reset your CryptoVault password")
+    """Password reset email."""
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Reset your password</h2>
+      <p style="margin:0 0 14px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, we received a request to reset your password. This link expires in 1 hour.
+      </p>
+      <div style="margin:18px 0 6px;text-align:center;">
+        {_button(reset_link, "Reset password")}
+      </div>
+      <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;word-break:break-word;">
+        Or open this link: <a href="{_e(reset_link)}" style="color:{_PRIMARY};text-decoration:none;">{_e(reset_link)}</a>
+      </p>
+      <p style="margin:14px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        If you did not request this, you can ignore this email.
+      </p>
+    """
+    return get_base_template(content, "Reset your password.")
 
+
+def password_reset_text(name: str, reset_link: str) -> str:
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - Reset your password",
+            "",
+            f"Hi {name},",
+            "",
+            "Reset link (expires in 1 hour):",
+            reset_link,
+            "",
+            "If you did not request this, you can ignore this email.",
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
+
+
+# ----------------------------
+# Funds / Activity Emails
+# ----------------------------
 
 def deposit_confirmation(name: str, amount: str, asset: str, tx_hash: str) -> str:
-    """Deposit confirmation email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Deposit Confirmed ✓
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, your deposit has been successfully credited to your CryptoVault account.
-        </p>
-        
-        <!-- Transaction Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 24px; background-color: #1f1f1f; border-radius: 12px;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Amount</p>
-                                <p style="margin: 4px 0 0; font-size: 24px; font-weight: 700; color: #10B981;">
-                                    +{amount} {asset}
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Asset</p>
-                                <p style="margin: 4px 0 0; font-size: 16px; color: #ffffff;">{asset}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Transaction Hash</p>
-                                <p style="margin: 4px 0 0; font-size: 12px; color: #FBBF24; word-break: break-all; font-family: monospace;">
-                                    {tx_hash}
-                                </p>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/dashboard" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        View Balance
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"Your {amount} {asset} deposit has been confirmed")
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Deposit received</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, your deposit has been recorded.
+      </p>
+      {_kv_table([('Amount', f'{amount} {asset}'), ('Transaction', tx_hash)])}
+      <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        If you do not recognize this activity, contact support immediately.
+      </p>
+    """
+    return get_base_template(content, "Deposit received.")
 
 
 def withdrawal_confirmation(name: str, amount: str, asset: str, address: str, tx_hash: str) -> str:
-    """Withdrawal confirmation email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Withdrawal Processed
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, your withdrawal request has been processed and sent to the blockchain.
-        </p>
-        
-        <!-- Transaction Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 24px; background-color: #1f1f1f; border-radius: 12px;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Amount</p>
-                                <p style="margin: 4px 0 0; font-size: 24px; font-weight: 700; color: #EF4444;">
-                                    -{amount} {asset}
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Destination Address</p>
-                                <p style="margin: 4px 0 0; font-size: 12px; color: #ffffff; word-break: break-all; font-family: monospace;">
-                                    {address}
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Transaction Hash</p>
-                                <p style="margin: 4px 0 0; font-size: 12px; color: #FBBF24; word-break: break-all; font-family: monospace;">
-                                    {tx_hash}
-                                </p>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- Security Notice -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: #1f1f1f; border-radius: 8px; border-left: 3px solid #EF4444;">
-                    <p style="margin: 0; font-size: 12px; color: #9ca3af;">
-                        ⚠️ <strong style="color: #ffffff;">Didn't authorize this?</strong> If you didn't initiate this withdrawal, please contact support immediately and freeze your account.
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/transactions" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        View Transaction History
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"Your withdrawal of {amount} {asset} has been processed")
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Withdrawal initiated</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, your withdrawal request has been initiated.
+      </p>
+      {_kv_table([('Amount', f'{amount} {asset}'), ('To address', address), ('Transaction', tx_hash)])}
+      <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        If you did not request this withdrawal, secure your account and contact support.
+      </p>
+    """
+    return get_base_template(content, "Withdrawal initiated.")
 
 
 def two_factor_reminder(name: str) -> str:
-    """2FA setup reminder email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Secure Your Account with 2FA
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, we noticed you haven't enabled Two-Factor Authentication (2FA) yet. Adding 2FA significantly increases the security of your account.
-        </p>
-        
-        <!-- Benefits -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 20px; background-color: #1f1f1f; border-radius: 12px;">
-                    <h3 style="margin: 0 0 16px; font-size: 16px; font-weight: 600; color: #FBBF24;">
-                        Why enable 2FA?
-                    </h3>
-                    <ul style="margin: 0; padding: 0 0 0 20px; color: #9ca3af; font-size: 14px; line-height: 1.8;">
-                        <li>Protect against unauthorized access even if your password is compromised</li>
-                        <li>Required for higher withdrawal limits</li>
-                        <li>Industry best practice for cryptocurrency security</li>
-                        <li>Takes less than 2 minutes to set up</li>
-                    </ul>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/dashboard?setup=2fa" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        Enable 2FA Now
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, "Protect your CryptoVault account - Enable 2FA")
+    url = f"{SITE_URL}/dashboard?setup=2fa"
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Enable two-factor authentication</h2>
+      <p style="margin:0 0 12px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, enabling 2FA significantly improves your account security.
+      </p>
+      <div style="margin:18px 0 6px;text-align:center;">
+        {_button(url, "Enable 2FA")}
+      </div>
+      <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        You can enable 2FA from your account security settings.
+      </p>
+    """
+    return get_base_template(content, "Enable 2FA to protect your account.")
 
 
 def security_alert(name: str, alert_type: str, details: str, ip_address: str, location: str) -> str:
-    """Security alert email (login, password change, etc.)"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            🔐 Security Alert
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, we detected {alert_type} on your CryptoVault account.
-        </p>
-        
-        <!-- Alert Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 24px; background-color: #1f1f1f; border-radius: 12px; border-left: 3px solid #FBBF24;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 8px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Activity</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff;">{details}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">IP Address</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff; font-family: monospace;">{ip_address}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Location</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff;">{location}</p>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- Warning -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
-                    <p style="margin: 0; font-size: 14px; color: #EF4444; font-weight: 600;">
-                        Was this you?
-                    </p>
-                    <p style="margin: 8px 0 0; font-size: 13px; color: #9ca3af;">
-                        If you don't recognize this activity, please secure your account immediately by changing your password and contacting support.
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Buttons -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/dashboard?security=true" style="display: inline-block; padding: 14px 24px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px; margin-right: 12px;">
-                        Review Activity
-                    </a>
-                    <a href="{SITE_URL}/help" style="display: inline-block; padding: 14px 24px; background-color: #1f1f1f; border: 1px solid #374151; color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        Contact Support
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"Security Alert: {alert_type} detected on your account")
+    secure_url = f"{SITE_URL}/dashboard?security=true"
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Security alert</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, we detected {_e(alert_type)} on your account.
+      </p>
+      {_kv_table([('Details', details), ('IP address', ip_address), ('Location', location)])}
+      <div style="margin:18px 0 6px;text-align:center;">
+        {_button(secure_url, "Review security")}
+      </div>
+      <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        If this wasn’t you, change your password and enable 2FA immediately.
+      </p>
+    """
+    return get_base_template(content, "Security alert.")
 
 
-def kyc_status_update(name: str, status: str, level: int, message: Optional[str] = None) -> str:
-    """KYC status update email"""
-    status_colors = {
-        "approved": "#10B981",
-        "rejected": "#EF4444",
-        "pending": "#FBBF24",
-    }
-    status_icons = {
-        "approved": "✓",
-        "rejected": "✗",
-        "pending": "⏳",
-    }
-    
-    color = status_colors.get(status.lower(), "#FBBF24")
-    icon = status_icons.get(status.lower(), "•")
-    
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            KYC Verification Update
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, there's an update on your identity verification (Level {level}).
-        </p>
-        
-        <!-- Status Badge -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 24px;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                        <tr>
-                            <td style="padding: 16px 32px; background-color: {color}20; border: 2px solid {color}; border-radius: 12px;">
-                                <p style="margin: 0; font-size: 32px; text-align: center;">{icon}</p>
-                                <p style="margin: 8px 0 0; font-size: 18px; font-weight: 700; color: {color}; text-transform: uppercase;">
-                                    {status}
-                                </p>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        {f'<p style="margin: 0 0 24px; font-size: 14px; color: #9ca3af; text-align: center; padding: 16px; background-color: #1f1f1f; border-radius: 8px;">{message}</p>' if message else ''}
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 16px 0 0;">
-                    <a href="{SITE_URL}/dashboard?kyc=true" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        View KYC Status
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"KYC Verification {status.title()} - Level {level}")
+def security_alert_text(name: str, alert_type: str, details: str, ip_address: str, location: str) -> str:
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - Security alert",
+            "",
+            f"Hi {name},",
+            "",
+            f"Alert type: {alert_type}",
+            f"Details: {details}",
+            f"IP address: {ip_address}",
+            f"Location: {location}",
+            "",
+            f"Review security: {SITE_URL}/dashboard?security=true",
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
+
+
+def kyc_status_update(name: str, status: str, tier: int, message: str) -> str:
+    status_norm = (status or "").strip().lower()
+    badge_color = _PRIMARY if status_norm == "approved" else _DANGER if status_norm == "rejected" else _MUTED
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">KYC status update</h2>
+      <p style="margin:0 0 12px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, your identity verification status has been updated.
+      </p>
+      <div style="margin:12px 0;padding:12px 14px;border:1px solid {_BORDER};border-radius:12px;background:#0f0f11;">
+        <div style="font-size:12px;color:{_MUTED};">Status</div>
+        <div style="margin-top:4px;font-size:14px;font-weight:800;color:{badge_color};text-transform:capitalize;">{_e(status_norm or 'updated')}</div>
+        <div style="margin-top:8px;font-size:12px;color:{_MUTED};">Tier</div>
+        <div style="margin-top:4px;font-size:13px;color:{_TEXT};">{_e(tier)}</div>
+      </div>
+      <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        {_e(message)}
+      </p>
+    """
+    return get_base_template(content, "KYC status updated.")
+
+
+def kyc_status_update_text(name: str, status: str, tier: int, message: str) -> str:
+    status_norm = (status or "").strip().lower() or "updated"
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - KYC status update",
+            "",
+            f"Hi {name},",
+            "",
+            f"Status: {status_norm}",
+            f"Tier: {tier}",
+            "",
+            message,
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
 
 
 def p2p_transfer_sent(
@@ -591,71 +437,54 @@ def p2p_transfer_sent(
     asset: str,
     gas_fee: str,
     transaction_id: str,
-    note: Optional[str] = None
+    note: Optional[str] = None,
 ) -> str:
-    """P2P transfer sent confirmation email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            Transfer Sent Successfully ✓
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {sender_name}, your transfer to {recipient_name} has been completed.
-        </p>
-        
-        <!-- Transaction Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 24px; background-color: #1f1f1f; border-radius: 12px;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Amount Sent</p>
-                                <p style="margin: 4px 0 0; font-size: 24px; font-weight: 700; color: #EF4444;">
-                                    -{amount} {asset}
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Network Fee</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #9ca3af;">
-                                    {gas_fee}
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Recipient</p>
-                                <p style="margin: 4px 0 0; font-size: 16px; color: #ffffff;">{recipient_name}</p>
-                                <p style="margin: 2px 0 0; font-size: 12px; color: #6b7280;">{recipient_email}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Transaction ID</p>
-                                <p style="margin: 4px 0 0; font-size: 12px; color: #FBBF24; word-break: break-all; font-family: monospace;">
-                                    {transaction_id}
-                                </p>
-                            </td>
-                        </tr>
-                        {f'<tr><td style="padding: 12px 0; border-top: 1px solid #374151;"><p style="margin: 0; font-size: 12px; color: #6b7280;">Note</p><p style="margin: 4px 0 0; font-size: 14px; color: #ffffff; font-style: italic;">"{note}"</p></td></tr>' if note else ''}
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/transactions" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        View Transaction History
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"You sent {amount} {asset} to {recipient_name}")
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Transfer sent</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(sender_name)}, you sent funds to {_e(recipient_name)}.
+      </p>
+      {_kv_table([
+        ('Recipient', f'{recipient_name} <{recipient_email}>'),
+        ('Amount', f'{amount} {asset}'),
+        ('Estimated fee', gas_fee),
+        ('Transaction ID', transaction_id),
+      ])}
+    """
+    if note:
+        content += f"""
+          <div style="margin:12px 0;padding:12px 14px;border:1px solid {_BORDER};border-radius:12px;background:#0f0f11;">
+            <div style="font-size:12px;color:{_MUTED};margin-bottom:6px;">Note</div>
+            <div style="font-size:13px;color:{_TEXT};line-height:1.55;">{_e(note)}</div>
+          </div>
+        """
+    return get_base_template(content, "Transfer sent.")
+
+
+def p2p_transfer_sent_text(
+    sender_name: str,
+    recipient_name: str,
+    recipient_email: str,
+    amount: str,
+    asset: str,
+    gas_fee: str,
+    transaction_id: str,
+    note: Optional[str] = None,
+) -> str:
+    lines = [
+        f"{BRAND_NAME} - Transfer sent",
+        "",
+        f"Hi {sender_name},",
+        "",
+        f"Recipient: {recipient_name} <{recipient_email}>",
+        f"Amount: {amount} {asset}",
+        f"Estimated fee: {gas_fee}",
+        f"Transaction ID: {transaction_id}",
+    ]
+    if note:
+        lines += ["", f"Note: {note}"]
+    lines += ["", f"Support: {SUPPORT_EMAIL}"]
+    return "\n".join(lines)
 
 
 def p2p_transfer_received(
@@ -665,63 +494,51 @@ def p2p_transfer_received(
     amount: str,
     asset: str,
     transaction_id: str,
-    note: Optional[str] = None
+    note: Optional[str] = None,
 ) -> str:
-    """P2P transfer received notification email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            You Received {asset}! 🎉
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {recipient_name}, you just received a transfer from {sender_name}.
-        </p>
-        
-        <!-- Transaction Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 24px; background-color: #1f1f1f; border-radius: 12px;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Amount Received</p>
-                                <p style="margin: 4px 0 0; font-size: 28px; font-weight: 700; color: #10B981;">
-                                    +{amount} {asset}
-                                </p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">From</p>
-                                <p style="margin: 4px 0 0; font-size: 16px; color: #ffffff;">{sender_name}</p>
-                                <p style="margin: 2px 0 0; font-size: 12px; color: #6b7280;">{sender_email}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Transaction ID</p>
-                                <p style="margin: 4px 0 0; font-size: 12px; color: #FBBF24; word-break: break-all; font-family: monospace;">
-                                    {transaction_id}
-                                </p>
-                            </td>
-                        </tr>
-                        {f'<tr><td style="padding: 12px 0; border-top: 1px solid #374151;"><p style="margin: 0; font-size: 12px; color: #6b7280;">Note from sender</p><p style="margin: 4px 0 0; font-size: 14px; color: #ffffff; font-style: italic;">"{note}"</p></td></tr>' if note else ''}
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/dashboard" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        View Your Balance
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"You received {amount} {asset} from {sender_name}")
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Funds received</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(recipient_name)}, you received funds from {_e(sender_name)}.
+      </p>
+      {_kv_table([
+        ('Sender', f'{sender_name} <{sender_email}>'),
+        ('Amount', f'{amount} {asset}'),
+        ('Transaction ID', transaction_id),
+      ])}
+    """
+    if note:
+        content += f"""
+          <div style="margin:12px 0;padding:12px 14px;border:1px solid {_BORDER};border-radius:12px;background:#0f0f11;">
+            <div style="font-size:12px;color:{_MUTED};margin-bottom:6px;">Note</div>
+            <div style="font-size:13px;color:{_TEXT};line-height:1.55;">{_e(note)}</div>
+          </div>
+        """
+    return get_base_template(content, "Funds received.")
+
+
+def p2p_transfer_received_text(
+    recipient_name: str,
+    sender_name: str,
+    sender_email: str,
+    amount: str,
+    asset: str,
+    transaction_id: str,
+    note: Optional[str] = None,
+) -> str:
+    lines = [
+        f"{BRAND_NAME} - Funds received",
+        "",
+        f"Hi {recipient_name},",
+        "",
+        f"Sender: {sender_name} <{sender_email}>",
+        f"Amount: {amount} {asset}",
+        f"Transaction ID: {transaction_id}",
+    ]
+    if note:
+        lines += ["", f"Note: {note}"]
+    lines += ["", f"Support: {SUPPORT_EMAIL}"]
+    return "\n".join(lines)
 
 
 def price_alert_triggered(
@@ -730,192 +547,88 @@ def price_alert_triggered(
     current_price: str,
     target_price: str,
     condition: str,
-    alert_id: str
+    alert_id: str,
 ) -> str:
-    """Price alert triggered notification email"""
-    condition_text = "reached" if condition == "above" else "dropped below"
-    arrow = "↑" if condition == "above" else "↓"
-    color = "#10B981" if condition == "above" else "#EF4444"
-    
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            🔔 Price Alert Triggered
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, {asset} has {condition_text} your target price.
-        </p>
-        
-        <!-- Price Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 24px; background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%); border: 1px solid rgba(251, 191, 36, 0.2); border-radius: 12px;">
-                    <p style="margin: 0 0 8px; font-size: 14px; color: #6b7280;">{asset}</p>
-                    <p style="margin: 0; font-size: 36px; font-weight: 700; color: {color};">
-                        {arrow} {current_price}
-                    </p>
-                    <p style="margin: 8px 0 0; font-size: 14px; color: #9ca3af;">
-                        Target: {target_price}
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Buttons -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/trade?asset={asset.lower()}" style="display: inline-block; padding: 14px 24px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px; margin-right: 12px;">
-                        Trade Now
-                    </a>
-                    <a href="{SITE_URL}/alerts" style="display: inline-block; padding: 14px 24px; background-color: #1f1f1f; border: 1px solid #374151; color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        Manage Alerts
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"Price Alert: {asset} {condition_text} {target_price}")
+    condition_norm = (condition or "").strip().lower()
+    condition_text = "above" if condition_norm == "above" else "below"
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Price alert</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, your alert for {_e(asset)} was triggered.
+      </p>
+      {_kv_table([
+        ('Asset', asset),
+        ('Condition', f'{condition_text} {target_price}'),
+        ('Current price', current_price),
+        ('Alert ID', alert_id),
+      ])}
+      <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        You can manage alerts in your dashboard.
+      </p>
+    """
+    return get_base_template(content, "Price alert triggered.")
 
 
-def kyc_status_update(name: str, status: str, tier: int, message: str) -> str:
-    """KYC status update notification (approval or rejection)"""
-    
-    # Status-specific styling
-    if status == 'approved':
-        status_color = '#10B981'  # Green
-        status_icon = '✅'
-        status_text = 'KYC Approved'
-        header_gradient = 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.1) 100%)'
-    elif status == 'rejected':
-        status_color = '#EF4444'  # Red
-        status_icon = '❌'
-        status_text = 'KYC Not Approved'
-        header_gradient = 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%)'
-    else:
-        status_color = '#F59E0B'  # Amber
-        status_icon = '⏳'
-        status_text = 'KYC Pending'
-        header_gradient = 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.1) 100%)'
-    
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            {status_icon} {status_text}
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, your KYC verification status has been updated.
-        </p>
-        
-        <!-- Status Box -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 24px; background: {header_gradient}; border: 2px solid {status_color}; border-radius: 12px;">
-                    <p style="margin: 0 0 8px; font-size: 12px; color: {status_color}; text-transform: uppercase; letter-spacing: 2px; font-weight: 600;">
-                        STATUS UPDATE
-                    </p>
-                    <p style="margin: 0 0 16px; font-size: 32px; font-weight: 700; color: {status_color};">
-                        {status_text}
-                    </p>
-                    <p style="margin: 0; font-size: 14px; color: #9ca3af;">
-                        {message}
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- Tier Information (if approved) -->
-        {f"""
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: rgba(16, 185, 129, 0.1); border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #10B981;">
-                        🎉 Your Account Tier: {tier}
-                    </p>
-                    <p style="margin: 0; font-size: 13px; color: #9ca3af;">
-                        Daily transaction limit: <strong style="color: #ffffff;">${['500', '5,000', '50,000'][tier]}</strong>
-                    </p>
-                </td>
-            </tr>
-        </table>
-        """ if status == 'approved' else ''}
-        
-        <!-- Next Steps -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: rgba(59, 130, 246, 0.1); border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
-                    <p style="margin: 0 0 8px; font-size: 14px; font-weight: 600; color: #3B82F6;">
-                        📋 Next Steps:
-                    </p>
-                    <p style="margin: 0; font-size: 13px; color: #9ca3af;">
-                        {
-                            'You can now access all platform features including deposits, trading, and withdrawals!' if status == 'approved'
-                            else 'Please resubmit your KYC documents with the correct information. Contact support if you need assistance.' if status == 'rejected'
-                            else 'Your documents are being reviewed. You will be notified once the review is complete.'
-                        }
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Button (if approved) -->
-        {f"""
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td align="center">
-                    <a href="https://cryptovaultpro.finance/dashboard" 
-                       style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #000000; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px;">
-                        Go to Dashboard →
-                    </a>
-                </td>
-            </tr>
-        </table>
-        """ if status == 'approved' else ''}
-    '''
-    return get_base_template(content, f"KYC {status_text} - CryptoVault")
+def price_alert_triggered_text(
+    name: str,
+    asset: str,
+    current_price: str,
+    target_price: str,
+    condition: str,
+    alert_id: str,
+) -> str:
+    condition_norm = (condition or "").strip().lower()
+    condition_text = "above" if condition_norm == "above" else "below"
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - Price alert",
+            "",
+            f"Hi {name},",
+            "",
+            f"Asset: {asset}",
+            f"Condition: {condition_text} {target_price}",
+            f"Current price: {current_price}",
+            f"Alert ID: {alert_id}",
+            "",
+            f"Manage alerts: {SITE_URL}/dashboard",
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
 
 
 def admin_otp_email(admin_name: str, otp_code: str, ip_address: str) -> str:
-    """Admin OTP authentication email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            🔐 Admin Login Verification
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {admin_name}, a login attempt was made to the CryptoVault Admin Panel. Use the code below to complete authentication.
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">Admin sign-in verification</h2>
+      <p style="margin:0 0 14px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(admin_name)}, use this code to complete your admin login. This code expires in 5 minutes.
+      </p>
+      {_mono_box(otp_code)}
+      <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        Request IP: <span style="font-family:ui-monospace,Menlo,Monaco,Consolas,monospace;">{_e(ip_address)}</span>
+      </p>
+      <div style="margin-top:14px;padding:12px 14px;border:1px solid rgba(239,68,68,0.35);border-radius:12px;background:rgba(239,68,68,0.08);">
+        <p style="margin:0;color:{_MUTED};font-size:12px;line-height:1.6;">
+          If you did not attempt to sign in, contact your security team immediately.
         </p>
-        
-        <!-- OTP Code Box -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 24px; background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%); border: 2px solid rgba(239, 68, 68, 0.3); border-radius: 12px;">
-                    <p style="margin: 0 0 8px; font-size: 12px; color: #EF4444; text-transform: uppercase; letter-spacing: 2px; font-weight: 600;">
-                        ADMIN OTP CODE
-                    </p>
-                    <p style="margin: 0; font-size: 48px; font-weight: 700; color: #EF4444; letter-spacing: 12px; font-family: monospace;">
-                        {otp_code}
-                    </p>
-                    <p style="margin: 8px 0 0; font-size: 12px; color: #9ca3af;">
-                        IP Address: <code style="color: #EF4444;">{ip_address}</code>
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <p style="margin: 24px 0 0; font-size: 14px; color: #EF4444; text-align: center; font-weight: 600;">
-            ⏰ This code expires in <strong>5 minutes</strong>
-        </p>
-        
-        <!-- Security Warning -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
-                    <p style="margin: 0; font-size: 13px; color: #9ca3af;">
-                        <strong style="color: #EF4444;">⚠️ Security Alert:</strong> If you didn't attempt to log into the admin panel, please contact the security team immediately. This may indicate unauthorized access attempts.
-                    </p>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"Admin OTP: {otp_code} - Secure Login Verification")
+      </div>
+    """
+    return get_base_template(content, f"Admin OTP: {otp_code}")
+
+
+def admin_otp_email_text(admin_name: str, otp_code: str, ip_address: str) -> str:
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - Admin sign-in verification",
+            "",
+            f"Hi {admin_name},",
+            "",
+            f"OTP code (expires in 5 minutes): {otp_code}",
+            f"Request IP: {ip_address}",
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
 
 
 def login_new_device(
@@ -924,83 +637,110 @@ def login_new_device(
     browser: str,
     ip_address: str,
     location: str,
-    login_time: str
+    login_time: str,
 ) -> str:
-    """New device login notification email"""
-    content = f'''
-        <h2 style="margin: 0 0 16px; font-size: 22px; font-weight: 600; color: #ffffff;">
-            New Login Detected
-        </h2>
-        <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #9ca3af;">
-            Hi {name}, we detected a new login to your CryptoVault account.
-        </p>
-        
-        <!-- Login Details -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td style="padding: 24px; background-color: #1f1f1f; border-radius: 12px;">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Device</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff;">{device}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Browser</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff;">{browser}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">IP Address</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff; font-family: monospace;">{ip_address}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0; border-bottom: 1px solid #374151;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Location</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff;">{location}</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 8px 0;">
-                                <p style="margin: 0; font-size: 12px; color: #6b7280;">Time</p>
-                                <p style="margin: 4px 0 0; font-size: 14px; color: #ffffff;">{login_time}</p>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- Security Warning -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 24px;">
-            <tr>
-                <td style="padding: 16px; background-color: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
-                    <p style="margin: 0; font-size: 14px; color: #EF4444; font-weight: 600;">
-                        Was this you?
-                    </p>
-                    <p style="margin: 8px 0 0; font-size: 13px; color: #9ca3af;">
-                        If you don't recognize this login, please secure your account immediately by changing your password and enabling 2FA.
-                    </p>
-                </td>
-            </tr>
-        </table>
-        
-        <!-- CTA Buttons -->
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-            <tr>
-                <td align="center" style="padding: 32px 0 0;">
-                    <a href="{SITE_URL}/dashboard?security=true" style="display: inline-block; padding: 14px 24px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: #0a0a0a; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px; margin-right: 12px;">
-                        Secure Account
-                    </a>
-                    <a href="{SITE_URL}/help" style="display: inline-block; padding: 14px 24px; background-color: #1f1f1f; border: 1px solid #374151; color: #ffffff; font-size: 14px; font-weight: 600; text-decoration: none; border-radius: 8px;">
-                        Report Suspicious Activity
-                    </a>
-                </td>
-            </tr>
-        </table>
-    '''
-    return get_base_template(content, f"New login to your CryptoVault account from {location}")
+    secure_url = f"{SITE_URL}/dashboard?security=true"
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">New login detected</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        Hi {_e(name)}, we detected a login from a new device.
+      </p>
+      {_kv_table([
+        ('Device', device),
+        ('Browser', browser),
+        ('IP address', ip_address),
+        ('Location', location),
+        ('Time', login_time),
+      ])}
+      <div style="margin:18px 0 6px;text-align:center;">
+        {_button(secure_url, "Secure account")}
+      </div>
+      <p style="margin:10px 0 0;color:{_MUTED};font-size:12px;line-height:1.6;">
+        If this wasn’t you, reset your password and enable 2FA.
+      </p>
+    """
+    return get_base_template(content, "New login detected.")
+
+
+def login_new_device_text(
+    name: str,
+    device: str,
+    browser: str,
+    ip_address: str,
+    location: str,
+    login_time: str,
+) -> str:
+    return "\n".join(
+        [
+            f"{BRAND_NAME} - New login detected",
+            "",
+            f"Hi {name},",
+            "",
+            f"Device: {device}",
+            f"Browser: {browser}",
+            f"IP address: {ip_address}",
+            f"Location: {location}",
+            f"Time: {login_time}",
+            "",
+            f"Secure account: {SITE_URL}/dashboard?security=true",
+            "",
+            f"Support: {SUPPORT_EMAIL}",
+        ]
+    )
+
+
+# ----------------------------
+# Support / Internal Emails
+# ----------------------------
+
+def contact_submission_internal(
+    name: str,
+    email: str,
+    company: Optional[str],
+    phone: Optional[str],
+    subject: str,
+    message: str,
+    ip_address: Optional[str],
+    user_agent: Optional[str],
+) -> EmailParts:
+    pre = f"New contact request: {subject}"
+    content = f"""
+      <h2 style="margin:0 0 10px;color:{_TEXT};font-size:20px;line-height:1.25;">New contact submission</h2>
+      <p style="margin:0 0 10px;color:{_MUTED};font-size:14px;line-height:1.6;">
+        A user submitted the contact form on {_e(BRAND_NAME)}.
+      </p>
+      {_kv_table([
+        ('Name', name),
+        ('Email', email),
+        ('Company', company or '-'),
+        ('Phone', phone or '-'),
+        ('Subject', subject),
+        ('IP', ip_address or '-'),
+      ])}
+      <div style="margin-top:12px;padding:12px 14px;border:1px solid {_BORDER};border-radius:12px;background:#0f0f11;">
+        <div style="font-size:12px;color:{_MUTED};margin-bottom:8px;">Message</div>
+        <div style="font-size:13px;color:{_TEXT};line-height:1.6;white-space:pre-wrap;">{_e(message)}</div>
+      </div>
+      <p style="margin:12px 0 0;color:{_MUTED};font-size:11px;line-height:1.6;">
+        User-Agent: {_e(user_agent or '-')}
+      </p>
+    """
+    html = get_base_template(content, pre)
+    text = "\n".join(
+        [
+            f"{BRAND_NAME} - Contact submission",
+            "",
+            f"Name: {name}",
+            f"Email: {email}",
+            f"Company: {company or '-'}",
+            f"Phone: {phone or '-'}",
+            f"Subject: {subject}",
+            f"IP: {ip_address or '-'}",
+            "",
+            "Message:",
+            message,
+            "",
+            f"User-Agent: {user_agent or '-'}",
+        ]
+    )
+    return EmailParts(subject=f"[Contact] {subject}", html=html, text=text)
