@@ -8,6 +8,7 @@ import logging
 from models import Portfolio, Holding, HoldingCreate
 from dependencies import get_current_user_id, get_db
 from cache import cache
+from redis_cache import redis_cache
 from services import price_stream_service
 from coincap_service import coincap_service
 
