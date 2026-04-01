@@ -16,7 +16,7 @@ Tests cover:
 import pytest
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from dataclasses import dataclass
 
