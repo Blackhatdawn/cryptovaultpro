@@ -173,13 +173,15 @@ class Settings(BaseSettings):
         description="MongoDB Atlas connection URL (REQUIRED - set in environment)"
     )
     db_name: str = Field(default="cryptovault", description="Database name")
-    mongo_max_pool_size: int = Field(default=10, description="MongoDB connection pool size")
+    mongo_max_pool_size: int = Field(default=50, description="MongoDB connection pool size - optimized for production with concurrent requests")
     mongo_timeout_ms: int = Field(default=5000, description="MongoDB connection timeout in ms")
 
     # ============================================
     # REDIS / CACHE CONFIGURATION
     # ============================================
     use_redis: bool = Field(default=True, description="Enable Redis caching")
+    redis_connection_pool_size: int = Field(default=20, description="Redis connection pool size for concurrent requests")
+    redis_socket_keepalive: bool = Field(default=True, description="Enable TCP keepalive for Redis connections")
     upstash_redis_rest_url: Optional[str] = Field(
         default=None,
         description="Upstash Redis REST API URL (for serverless environments)"

@@ -9,8 +9,9 @@ services:
     runtime: python
     # Runtime is pinned via backend/.python-version (3.11.11).
     # In Render Dashboard: Settings -> Environment -> Python Version should also be set to 3.11.
-    plan: starter  # Upgrade to standard/pro for more resources
+    plan: standard  # ⚠️ CRITICAL: Production requires 'standard' plan to avoid cold starts (eliminates 15-min spindown)
     region: oregon  # Choose closest to your users: oregon, frankfurt, singapore
+    maxInstanceCount: 2  # Enable auto-scaling up to 2 instances under load
     rootDir: backend
     buildCommand: |
       pip install --upgrade pip &&
@@ -35,9 +36,13 @@ services:
       - key: APP_VERSION
         value: "2.0.0"
       - key: WORKERS
-        value: "1"
+        value: "4"
       - key: UVICORN_LOOP
         value: asyncio
+      - key: UVICORN_TIMEOUT_KEEP_ALIVE
+        value: "5"
+      - key: UVICORN_LIMIT_MAX_REQUESTS
+        value: "10000"
       # Keep PYTHON_VERSION for compatibility; runtime pin is enforced via backend/.python-version and Render runtime setting.
       - key: PYTHON_VERSION
         value: 3.11.11
@@ -50,9 +55,13 @@ services:
       - key: DB_NAME
         value: cryptovault
       - key: MONGO_MAX_POOL_SIZE
-        value: "10"
+        value: "50"
       - key: MONGO_TIMEOUT_MS
         value: "5000"
+      - key: REDIS_CONNECTION_POOL_SIZE
+        value: "20"
+      - key: REDIS_SOCKET_KEEPALIVE
+        value: "true"
       
       # ============================================
       # AUTHENTICATION (JWT)
