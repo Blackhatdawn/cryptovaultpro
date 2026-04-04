@@ -52,6 +52,10 @@ from coincap_service import coincap_service
 from socketio_server import socketio_manager
 from redis_enhanced import redis_enhanced
 
+# Phase 2 Performance Optimization Modules
+from db_optimization import create_all_recommended_indexes
+from performance_monitoring import performance_metrics, RequestTimer
+
 # Rate limiting
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -462,6 +466,14 @@ async def lifespan(app: FastAPI):
                 logger.info("✅ Database indexes created")
             except Exception as e:
                 logger.warning(f"⚠️ Could not create indexes: {e}")
+            
+            # Phase 2: Create optimized indexes (compound indexes for query performance)
+            try:
+                logger.info("🚀 Creating Phase 2 optimized indexes...")
+                await create_all_recommended_indexes(db_connection.db)
+                logger.info("✅ Phase 2 optimized indexes created")
+            except Exception as e:
+                logger.warning(f"⚠️ Phase 2 index creation failed: {e}")
 
         # Start price stream service (non-critical)
         try:
@@ -1039,6 +1051,119 @@ async def get_csrf_token(request: Request):
 async def get_socketio_stats():
     """Get Socket.IO connection statistics."""
     return socketio_manager.get_stats()
+
+
+# ============================================
+# PHASE 2 MONITORING ENDPOINTS
+# ============================================
+
+@app.get("/api/monitor/performance", tags=["monitoring"])
+async def get_performance_metrics():
+    """
+    Phase 2: Performance metrics endpoint for monitoring.
+    Returns Core Web Vitals, API timing data, and performance summary.
+    
+    Response includes:
+    - Core Web Vitals (LCP, FID, CLS, TTFB, FCP)
+    - API endpoint performance (response times, status codes)
+    - Performance status (good/poor)
+    - Cache effectiveness
+    - Metrics timestamp
+    """
+    try:
+        summary = performance_metrics.get_summary()
+        return {
+            "status": "success",
+            "data": summary,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving performance metrics: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+@app.get("/api/monitor/circuit-breakers", tags=["monitoring"])
+async def get_circuit_breaker_status():
+    """
+    Phase 2: Circuit breaker status endpoint.
+    Returns status of all circuit breakers protecting external API calls.
+    
+    Pre-configured breakers:
+    - BREAKER_COINCAP: CoinCap/CoinGecko API
+    - BREAKER_COINMARKETCAP: CoinMarketCap API  
+    - BREAKER_FIREBASE: Firebase services
+    - BREAKER_EMAIL: Email service
+    - BREAKER_TELEGRAM: Telegram Bot API
+    - BREAKER_NOWPAYMENTS: NOWPayments API
+    
+    States:
+    - CLOSED: Normal operation (requests go through)
+    - OPEN: Service failing (requests fail fast, fallback used)
+    - HALF_OPEN: Recovery test (some requests allowed to test recovery)
+    """
+    try:
+        from circuit_breaker import CircuitBreakerRegistry
+        metrics = CircuitBreakerRegistry.get_metrics()
+        return {
+            "status": "success",
+            "data": metrics,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except ImportError:
+        logger.warning("Circuit breaker module not available")
+        return {
+            "status": "unavailable",
+            "message": "Circuit breaker module not yet integrated",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving circuit breaker status: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+@app.post("/api/metrics/vitals", tags=["monitoring"])
+async def record_web_vital(
+    name: str,
+    value: float,
+    url: Optional[str] = None,
+    user_id: Optional[str] = None,
+):
+    """
+    Phase 2: Record Core Web Vitals from frontend.
+    Frontend sends this data for performance monitoring.
+    
+    Parameters:
+    - name: Vital name (LCP, FID, CLS, TTFB, FCP)
+    - value: Metric value in appropriate units
+    - url: (optional) Page URL where vital was measured
+    - user_id: (optional) User ID for user-specific analytics
+    
+    Returns performance status: "good", "poor", or "needs_improvement"
+    """
+    try:
+        vital = performance_metrics.record_vital(name, value)
+        return {
+            "recorded": True,
+            "name": name,
+            "value": value,
+            "status": vital.status if vital else "unknown",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to record vital {name}={value}: {e}")
+        return {
+            "recorded": False,
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 # ============================================
