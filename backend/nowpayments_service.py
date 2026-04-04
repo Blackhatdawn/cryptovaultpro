@@ -129,6 +129,7 @@ class NOWPaymentsService:
             logger.error(f"Failed to get estimate: {e}")
             return {"error": str(e)}
     
+    @with_circuit_breaker(breaker=BREAKER_NOWPAYMENTS, fallback_func=lambda *args, **kwargs: {"error": "Payment API unavailable"})
     async def create_payment(
         self,
         price_amount: float,
@@ -142,7 +143,7 @@ class NOWPaymentsService:
         customer_email: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Create a payment invoice
+        Create a payment invoice with circuit breaker protection (Phase 3)
         
         Args:
             price_amount: Amount in price_currency (e.g., 100 USD)

@@ -17,6 +17,9 @@ from redis_cache import redis_cache
 from request_retry import with_retry, RETRY_API, RetryConfig
 from performance_monitoring import performance_metrics, RequestTimer
 
+# Phase 3 Fault Tolerance
+from circuit_breaker import with_circuit_breaker, BREAKER_COINCAP
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,13 +66,13 @@ class CoinCapService:
     @with_circuit_breaker(breaker=BREAKER_COINCAP, fallback_func=lambda *args, **kwargs: [])
     @with_retry(config=RETRY_API)
     async def _fetch_real_prices(self, coin_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        \"\"\"Fetch real prices from CoinGecko with circuit breaker (Phase 3) and retry logic (Phase 2).
+        """Fetch real prices from CoinGecko with circuit breaker (Phase 3) and retry logic (Phase 2).
         
         Circuit Breaker States:
         - CLOSED: Normal operation, requests go through
         - OPEN: CoinGecko failing, returns empty list fallback
         - HALF_OPEN: Automatic recovery test after 60s timeout
-        \"\"\"
+        """
         ids = [self._normalize_coin_id(coin_id) for coin_id in (coin_ids or self.tracked_coins)]
         async with RequestTimer("fetch-real-prices-circuit-protected"):
             async with httpx.AsyncClient(timeout=self.timeout) as client:

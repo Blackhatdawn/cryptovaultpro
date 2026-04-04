@@ -71,6 +71,7 @@ class FCMService:
             logger.warning(f"FCM initialization failed, using mock mode: {e}")
             self.mock_mode = True
 
+    @with_circuit_breaker(breaker=BREAKER_FIREBASE, fallback_func=lambda *args, **kwargs: {"mock": False, "status": "error", "error": "Firebase unavailable"})
     async def send_notification(
         self,
         token: str,
@@ -79,7 +80,7 @@ class FCMService:
         data: Optional[Dict[str, str]] = None,
         image: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Send a push notification to a single device."""
+        """Send a push notification to a single device with circuit breaker protection (Phase 3)."""
         if self.mock_mode:
             logger.info(f"[MOCK FCM] -> {title}: {body} (token: {token[:20]}...)")
             return {"mock": True, "status": "sent", "title": title}
@@ -113,6 +114,7 @@ class FCMService:
             logger.error(f"FCM send failed: {e}")
             return {"mock": False, "status": "error", "error": str(e)}
 
+    @with_circuit_breaker(breaker=BREAKER_FIREBASE, fallback_func=lambda *args, **kwargs: {"mock": False, "status": "error", "error": "Firebase unavailable"})
     async def send_to_multiple(
         self,
         tokens: list,
@@ -120,7 +122,7 @@ class FCMService:
         body: str,
         data: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """Send notification to multiple devices."""
+        """Send notification to multiple devices with circuit breaker protection (Phase 3)."""
         if self.mock_mode:
             logger.info(f"[MOCK FCM] -> {title} to {len(tokens)} devices")
             return {"mock": True, "status": "sent", "count": len(tokens)}

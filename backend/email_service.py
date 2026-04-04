@@ -28,6 +28,9 @@ from config import settings
 from request_retry import with_retry, RETRY_CONSERVATIVE
 from performance_monitoring import performance_metrics, RequestTimer
 
+# Phase 3 Fault Tolerance
+from circuit_breaker import with_circuit_breaker, BREAKER_EMAIL
+
 logger = logging.getLogger(__name__)
 
 # FIX #2: Reduce retry delays to keep total email time under 10 seconds
@@ -393,6 +396,7 @@ class EmailService:
         except Exception as e:
             logger.warning(f"Failed to log email failure to database: {str(e)}")
     
+    @with_circuit_breaker(breaker=BREAKER_EMAIL, fallback_func=lambda *args, **kwargs: False)
     async def _send_sendgrid(
         self,
         to_email: str,
@@ -400,7 +404,7 @@ class EmailService:
         html_content: str,
         text_content: str
     ) -> bool:
-        """Send email via SendGrid API with timeout."""
+        """Send email via SendGrid API with timeout and circuit breaker protection (Phase 3)."""
         try:
             # FIX #2: Add timeout to individual email send attempts (5 seconds max)
             async def send_with_timeout():
@@ -439,6 +443,7 @@ class EmailService:
                 return await self._send_mock(to_email, subject)
             raise
     
+    @with_circuit_breaker(breaker=BREAKER_EMAIL, fallback_func=lambda *args, **kwargs: False)
     async def _send_smtp(
         self,
         to_email: str,
@@ -446,7 +451,7 @@ class EmailService:
         html_content: str,
         text_content: str
     ) -> bool:
-        """Send email via SMTP with timeout. Falls back to mock in dev mode on auth failure."""
+        """Send email via SMTP with timeout and circuit breaker protection (Phase 3). Falls back to mock in dev mode on auth failure."""
         try:
             message = EmailMessage()
             message["From"] = f"{self.from_name} <{self.from_email}>"
@@ -497,6 +502,7 @@ class EmailService:
         except Exception as e:
             logger.warning(f"SMTP validation failed: {e}. Emails will fall back to mock mode in dev.")
 
+    @with_circuit_breaker(breaker=BREAKER_EMAIL, fallback_func=lambda *args, **kwargs: False)
     async def _send_resend(
         self,
         to_email: str,
@@ -504,7 +510,7 @@ class EmailService:
         html_content: str,
         text_content: str
     ) -> bool:
-        """Send email via Resend API with timeout."""
+        """Send email via Resend API with timeout and circuit breaker protection (Phase 3)."""
         try:
             payload = {
                 "from": f"{self.from_name} <{self.from_email}>",
