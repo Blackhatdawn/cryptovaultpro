@@ -33,7 +33,7 @@ flake8==7.3.0
 frozenlist==1.8.0
 fsspec==2026.2.0
 geoip2==5.2.0
-google-ai-generativelanguage==0.11.0
+google-ai-generativelanguage==0.6.15
 google-api-core==2.27.0,<3.0.0
 google-api-python-client==2.191.0
 google-auth==2.49.0.dev0
@@ -41,8 +41,8 @@ google-auth-httplib2==0.3.0
 google-cloud-firestore==2.25.0
 google-cloud-storage==3.9.0
 google-crc32c==1.8.0
-google-genai==1.70.0
-google-genai
+google-genai==1.68.0
+google-generativeai==0.8.6
 google-resumable-media==2.8.0
 googleapis-common-protos==1.72.0
 grpcio==1.78.1
@@ -89,6 +89,7 @@ platformdirs==4.9.4
 pluggy==1.6.0
 propcache==0.4.1
 proto-plus==1.27.1
+protobuf==5.29.6
 psutil==7.2.2
 pyasn1==0.6.2
 pyasn1_modules==0.4.2
