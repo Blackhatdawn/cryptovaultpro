@@ -42,6 +42,7 @@ else:
 from routers import auth, portfolio, trading, crypto, admin, wallet, alerts, transactions, prices, websocket, transfers, users, notifications, monitoring, config, referrals, earn, contact, push
 from routers.health import router as health_router
 from routers.kyc_aml import router as kyc_aml_router
+from routers.circuit_breaker_monitor import router as circuit_breaker_monitor_router
 
 # Services
 from services.telegram_bot import telegram_bot
@@ -856,6 +857,10 @@ app.include_router(websocket.router)
 
 # Monitoring (no versioning or auth required)
 app.include_router(monitoring.router, prefix="/api")
+
+# Circuit Breaker Monitoring (Phase 3: Fault Tolerance Dashboard)
+app.include_router(circuit_breaker_monitor_router, tags=["monitoring"])
+
 # Removed: deep_investigation router (archived to _legacy_archive)
 # app.include_router(deep_investigation.router, prefix="/api")
 
