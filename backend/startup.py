@@ -1,4 +1,4 @@
-peopie"""
+"""
 Enterprise-Grade Startup and Initialization Module
 
 Handles:

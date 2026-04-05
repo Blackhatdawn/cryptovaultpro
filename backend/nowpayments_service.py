@@ -60,9 +60,12 @@ class NOWPaymentsService:
             "Content-Type": "application/json"
         }
     
-    @with_circuit_breaker(breaker=BREAKER_NOWPAYMENTS, fallback_func=lambda *args, **kwargs: {\"status\": \"error\", \"message\": \"Payment API unavailable\"})
+    @with_circuit_breaker(
+        breaker=BREAKER_NOWPAYMENTS,
+        fallback_func=lambda *args, **kwargs: {"status": "error", "message": "Payment API unavailable"},
+    )
     async def get_status(self) -> Dict[str, Any]:
-        \"\"\"Check API status with circuit breaker protection (Phase 3)\"\"\"
+        """Check API status with circuit breaker protection (Phase 3)."""
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(
