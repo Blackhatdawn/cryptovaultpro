@@ -6,7 +6,11 @@ set -e
 echo "📦 Migrating to pnpm..."
 echo ""
 
-cd /app/frontend
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+FRONTEND_DIR="$REPO_ROOT/frontend"
+
+cd "$FRONTEND_DIR"
 
 # Check if pnpm is installed
 if ! command -v pnpm &> /dev/null; then
