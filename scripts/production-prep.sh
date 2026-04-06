@@ -13,6 +13,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+FRONTEND_DIR="$REPO_ROOT/frontend"
+BACKEND_DIR="$REPO_ROOT/backend"
+
 # Function to print status
 print_status() {
     echo -e "${GREEN}✅${NC} $1"
@@ -24,11 +29,11 @@ print_warning() {
 
 # 1. Remove console.log statements from frontend (optional - comment out if you want to keep them for debugging)
 echo "1. Checking console.log statements..."
-CONSOLE_COUNT=$(find /app/frontend/src -type f \( -name "*.ts" -o -name "*.tsx" \) -exec grep -l "console\." {} \; 2>/dev/null | wc -l)
+CONSOLE_COUNT=$(find "$FRONTEND_DIR/src" -type f \( -name "*.ts" -o -name "*.tsx" \) -exec grep -l "console\." {} \; 2>/dev/null | wc -l)
 if [ "$CONSOLE_COUNT" -gt 0 ]; then
     print_warning "Found $CONSOLE_COUNT files with console statements"
     echo "   To remove: Run this script with --remove-console flag"
-    echo "   Or manually: find /app/frontend/src -type f \( -name '*.ts' -o -name '*.tsx' \) -exec sed -i '/console\./d' {} +"
+    echo "   Or manually: find $FRONTEND_DIR/src -type f \\( -name '*.ts' -o -name '*.tsx' \\) -exec sed -i '/console\\./d' {} +"
 else
     print_status "No console statements found"
 fi
@@ -36,10 +41,10 @@ fi
 # 2. Check for TODO comments
 echo ""
 echo "2. Checking TODO comments..."
-TODO_COUNT=$(find /app/frontend/src -type f \( -name "*.ts" -o -name "*.tsx" \) -exec grep -i "TODO\|FIXME" {} \; 2>/dev/null | wc -l)
+TODO_COUNT=$(find "$FRONTEND_DIR/src" -type f \( -name "*.ts" -o -name "*.tsx" \) -exec grep -i "TODO\|FIXME" {} \; 2>/dev/null | wc -l)
 if [ "$TODO_COUNT" -gt 0 ]; then
     print_warning "Found $TODO_COUNT TODO/FIXME comments"
-    echo "   Review with: grep -rn 'TODO\|FIXME' /app/frontend/src"
+    echo "   Review with: grep -rn 'TODO\\|FIXME' $FRONTEND_DIR/src"
 else
     print_status "No TODO comments found"
 fi
@@ -47,13 +52,13 @@ fi
 # 3. Verify environment files exist
 echo ""
 echo "3. Checking environment configuration..."
-if [ -f "/app/backend/.env" ]; then
+if [ -f "$BACKEND_DIR/.env" ]; then
     print_status "Backend .env exists"
     
     # Check for required variables
     REQUIRED_VARS=("MONGO_URL" "JWT_SECRET" "CORS_ORIGINS")
     for var in "${REQUIRED_VARS[@]}"; do
-        if grep -q "^$var=" /app/backend/.env; then
+        if grep -q "^$var=" "$BACKEND_DIR/.env"; then
             print_status "  $var configured"
         else
             print_warning "  $var missing or not set"
@@ -63,7 +68,7 @@ else
     print_warning "Backend .env not found - copy from .env.example"
 fi
 
-if [ -f "/app/frontend/.env" ]; then
+if [ -f "$FRONTEND_DIR/.env" ]; then
     print_status "Frontend .env exists"
 else
     print_warning "Frontend .env not found (optional for development)"
@@ -72,10 +77,10 @@ fi
 # 4. Check TypeScript compilation
 echo ""
 echo "4. TypeScript compilation check..."
-cd /app/frontend
+cd "$FRONTEND_DIR"
 if yarn tsc --noEmit 2>&1 | grep -q "error TS"; then
     print_warning "TypeScript errors found"
-    echo "   Run: cd /app/frontend && yarn tsc --noEmit"
+    echo "   Run: cd $FRONTEND_DIR && yarn tsc --noEmit"
 else
     print_status "No TypeScript errors"
 fi
@@ -83,29 +88,29 @@ fi
 # 5. Check Python dependencies
 echo ""
 echo "5. Checking Python dependencies..."
-cd /app/backend
+cd "$BACKEND_DIR"
 if pip list 2>/dev/null | grep -q "fastapi"; then
     print_status "Python dependencies installed"
 else
     print_warning "Some Python dependencies may be missing"
-    echo "   Run: cd /app/backend && pip install -r requirements.txt"
+    echo "   Run: cd $BACKEND_DIR && pip install -r requirements.txt"
 fi
 
 # 6. Check frontend dependencies
 echo ""
 echo "6. Checking frontend dependencies..."
-cd /app/frontend
+cd "$FRONTEND_DIR"
 if [ -d "node_modules" ]; then
     print_status "Frontend dependencies installed"
 else
     print_warning "Frontend dependencies not installed"
-    echo "   Run: cd /app/frontend && yarn install"
+    echo "   Run: cd $FRONTEND_DIR && yarn install"
 fi
 
 # 7. Database connection test
 echo ""
 echo "7. Testing database connection..."
-cd /app/backend
+cd "$BACKEND_DIR"
 python3 << 'PYEOF' 2>/dev/null
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -142,7 +147,7 @@ fi
 # 9. Security checklist
 echo ""
 echo "9. Security checklist..."
-cd /app/backend
+cd "$BACKEND_DIR"
 if grep -q "JWT_SECRET=your-super-secret" .env 2>/dev/null; then
     print_warning "JWT_SECRET still using default - CHANGE THIS!"
 else
@@ -190,7 +195,7 @@ if [ "$1" == "--remove-console" ]; then
     read -p "Remove all console statements from frontend? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        find /app/frontend/src -type f \( -name "*.ts" -o -name "*.tsx" \) -exec sed -i '/console\./d' {} +
+        find "$FRONTEND_DIR/src" -type f \( -name "*.ts" -o -name "*.tsx" \) -exec sed -i '/console\./d' {} +
         print_status "Console statements removed"
     fi
 fi
