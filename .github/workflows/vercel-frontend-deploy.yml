@@ -75,9 +75,43 @@ jobs:
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy preview to Vercel
+        id: deploy_preview
         if: github.ref == 'refs/heads/main'
-        run: vercel deploy --prebuilt --token="$VERCEL_TOKEN"
+        run: |
+          DEPLOY_URL="$(vercel deploy --prebuilt --token=\"$VERCEL_TOKEN\")"
+          echo "deploy_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test preview deployment
+        if: github.ref == 'refs/heads/main'
+        env:
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.deploy_url }}
+        run: |
+          test -n "$PREVIEW_URL"
+          case "$PREVIEW_URL" in
+            https://*) BASE_URL="$PREVIEW_URL" ;;
+            *) BASE_URL="https://$PREVIEW_URL" ;;
+          esac
+          curl --fail --show-error --silent "$BASE_URL/"
+          curl --fail --show-error --silent "$BASE_URL/health"
+          curl --fail --show-error --silent "$BASE_URL/ping"
 
       - name: Deploy production to Vercel
+        id: deploy_production
         if: github.ref == 'refs/heads/production'
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: |
+          DEPLOY_URL="$(vercel deploy --prebuilt --prod --token=\"$VERCEL_TOKEN\")"
+          echo "deploy_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test production deployment
+        if: github.ref == 'refs/heads/production'
+        env:
+          PRODUCTION_URL: ${{ steps.deploy_production.outputs.deploy_url }}
+        run: |
+          test -n "$PRODUCTION_URL"
+          case "$PRODUCTION_URL" in
+            https://*) BASE_URL="$PRODUCTION_URL" ;;
+            *) BASE_URL="https://$PRODUCTION_URL" ;;
+          esac
+          curl --fail --show-error --silent "$BASE_URL/"
+          curl --fail --show-error --silent "$BASE_URL/health"
+          curl --fail --show-error --silent "$BASE_URL/ping"
